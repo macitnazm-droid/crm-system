@@ -1,12 +1,15 @@
 {
-    "name": "crm-server",
+    "name": "crm-ai-platform",
     "version": "1.0.0",
-    "description": "CRM AI Backend Server",
-    "main": "index.js",
+    "description": "CRM AI Platform - Full Stack",
+    "main": "server/index.js",
     "scripts": {
-        "start": "node index.js",
-        "dev": "node index.js",
-        "seed": "node db/seed.js"
+        "start": "node server/index.js",
+        "dev": "concurrently \"node server/index.js\" \"cd client && npm run dev\"",
+        "server": "node server/index.js",
+        "client": "cd client && npm run dev",
+        "build": "cd client && npm run build",
+        "seed": "node server/db/seed.js"
     },
     "dependencies": {
         "@anthropic-ai/sdk": "^0.39.0",
