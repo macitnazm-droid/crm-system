@@ -1,0 +1,213 @@
+const Database = require('better-sqlite3');
+const path = require('path');
+
+function initDB() {
+  const db = new Database(path.join(__dirname, '..', 'crm.db'));
+
+  // WAL modu — daha iyi performans
+  db.pragma('journal_mode = WAL');
+  db.pragma('foreign_keys = ON');
+
+  // 1. Şirketler tablosunu en başta oluştur
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS companies (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      domain TEXT UNIQUE,
+      user_limit INTEGER DEFAULT 10,
+      is_active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+  // 2. Migration: Mevcut tabloları kontrol et ve company_id ekle
+  const tablesToUpdate = ['users', 'customers', 'conversations', 'messages', 'ai_prompts', 'integration_settings'];
+  tablesToUpdate.forEach(table => {
+    try {
+      const info = db.prepare(`PRAGMA table_info(${table})`).all();
+      if (info.length > 0 && !info.some(c => c.name === 'company_id')) {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN company_id INTEGER REFERENCES companies(id)`);
+      }
+    } catch (err) { }
+  });
+
+  // 2.0 Migration: Companies tablosuna user_limit ekle
+  try {
+    const companyInfo = db.prepare(`PRAGMA table_info(companies)`).all();
+    if (companyInfo.length > 0 && !companyInfo.some(c => c.name === 'user_limit')) {
+      db.exec(`ALTER TABLE companies ADD COLUMN user_limit INTEGER DEFAULT 10`);
+      console.log('✅ Companies tablosuna user_limit eklendi.');
+    }
+  } catch (err) { }
+
+  // 2.1 Special Migration: Users tablosundaki ROLE kısıtlamasını güncelle
+  try {
+    const userTableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get();
+    if (userTableSql && !userTableSql.sql.includes('super_admin')) {
+      console.log('🔄 Users tablosu güncelleniyor (super_admin rolü ekleniyor)...');
+
+      // Foreign key kontrolünü geçici olarak kapat
+      db.pragma('foreign_keys = OFF');
+
+      db.transaction(() => {
+        db.exec(`
+          ALTER TABLE users RENAME TO users_old;
+          CREATE TABLE users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_id INTEGER REFERENCES companies(id),
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            name TEXT NOT NULL,
+            role TEXT DEFAULT 'agent' CHECK(role IN ('super_admin', 'admin', 'agent', 'manager')),
+            avatar_color TEXT DEFAULT '#6366f1',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            is_active INTEGER DEFAULT 1
+          );
+          INSERT INTO users (id, company_id, email, password_hash, name, role, avatar_color, created_at, is_active)
+          SELECT id, company_id, email, password_hash, name, role, avatar_color, created_at, is_active FROM users_old;
+          DROP TABLE users_old;
+        `);
+      })();
+
+      db.pragma('foreign_keys = ON');
+    }
+  } catch (err) {
+    console.error('Users migration error:', err.message);
+    db.pragma('foreign_keys = ON');
+  }
+
+  // 3. Tabloları ve bağlantılı yapıları oluştur
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      company_id INTEGER REFERENCES companies(id),
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      name TEXT NOT NULL,
+      role TEXT DEFAULT 'agent' CHECK(role IN ('super_admin', 'admin', 'agent', 'manager')),
+      avatar_color TEXT DEFAULT '#6366f1',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      is_active INTEGER DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS customers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      company_id INTEGER REFERENCES companies(id),
+      phone TEXT,
+      instagram_id TEXT,
+      whatsapp_id TEXT,
+      name TEXT NOT NULL,
+      email TEXT,
+      category TEXT DEFAULT 'cold' CHECK(category IN ('hot', 'warm', 'cold', 'unqualified')),
+      lead_score INTEGER DEFAULT 0,
+      source TEXT DEFAULT 'instagram' CHECK(source IN ('instagram', 'whatsapp', 'api', 'manual')),
+      last_message_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS conversations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      company_id INTEGER REFERENCES companies(id),
+      customer_id INTEGER NOT NULL REFERENCES customers(id),
+      assigned_agent_id INTEGER REFERENCES users(id),
+      status TEXT DEFAULT 'open' CHECK(status IN ('open', 'closed', 'paused')),
+      ai_enabled INTEGER DEFAULT 1,
+      ai_stopped_at DATETIME,
+      last_message_preview TEXT,
+      unread_count INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      company_id INTEGER REFERENCES companies(id),
+      conversation_id INTEGER NOT NULL REFERENCES conversations(id),
+      customer_id INTEGER NOT NULL REFERENCES customers(id),
+      user_id INTEGER REFERENCES users(id),
+      content TEXT NOT NULL,
+      source TEXT DEFAULT 'instagram' CHECK(source IN ('instagram', 'whatsapp', 'api', 'manual')),
+      direction TEXT NOT NULL CHECK(direction IN ('inbound', 'outbound')),
+      is_ai_generated INTEGER DEFAULT 0,
+      ai_model TEXT,
+      is_manual_override INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS ai_prompts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      company_id INTEGER REFERENCES companies(id),
+      name TEXT NOT NULL,
+      system_prompt TEXT NOT NULL,
+      instructions TEXT,
+      version INTEGER DEFAULT 1,
+      created_by INTEGER REFERENCES users(id),
+      is_active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS integration_settings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      company_id INTEGER REFERENCES companies(id),
+      platform TEXT NOT NULL CHECK(platform IN ('instagram', 'whatsapp')),
+      api_key TEXT DEFAULT '',
+      api_secret TEXT DEFAULT '',
+      webhook_url TEXT DEFAULT '',
+      phone_number_id TEXT DEFAULT '',
+      page_id TEXT DEFAULT '',
+      verify_token TEXT DEFAULT '',
+      is_active INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_users_company ON users(company_id);
+    CREATE INDEX IF NOT EXISTS idx_customers_company ON customers(company_id);
+    CREATE INDEX IF NOT EXISTS idx_conversations_company ON conversations(company_id);
+    CREATE INDEX IF NOT EXISTS idx_messages_company ON messages(company_id);
+  `);
+
+  // 4. Varsayılan şirket oluştur (eğer yoksa)
+  try {
+    const companyCount = db.prepare('SELECT COUNT(*) as count FROM companies').get();
+    if (companyCount.count === 0) {
+      db.prepare('INSERT INTO companies (id, name) VALUES (1, ?)').run('Ana Firma');
+      console.log('🏢 Varsayılan şirket oluşturuldu.');
+
+      // Mevcut verileri varsayılan şirkete ata
+      const tables = ['users', 'customers', 'conversations', 'messages', 'ai_prompts', 'integration_settings'];
+      tables.forEach(table => {
+        try {
+          db.prepare(`UPDATE ${table} SET company_id = 1 WHERE company_id IS NULL`).run();
+        } catch (e) { /* Tablo yoksa atla */ }
+      });
+    }
+  } catch (err) {
+    console.error('Şirket oluşturma hatası:', err.message);
+  }
+
+  // Varsayılan AI prompt'u ekle (yoksa)
+  const promptCount = db.prepare('SELECT COUNT(*) as count FROM ai_prompts').get();
+  if (promptCount.count === 0) {
+    db.prepare(`
+      INSERT INTO ai_prompts (company_id, name, system_prompt, instructions, created_by, is_active)
+      VALUES (?, ?, ?, ?, NULL, 1)
+    `).run(
+      1,
+      'Varsayılan Satış Asistanı',
+      `Sen bir satış asistanısın. Müşterilere yardımcı ol, ürünler hakkında bilgi ver ve satışa yönlendir...`,
+      `Müşteriyi kategorize et...`
+    );
+  }
+
+  // Demo veri kontrol — seed.js ile ayrıca da çalıştırılabilir
+  const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get();
+  if (userCount.count === 0) {
+    const { seedDatabase } = require('./seed');
+    seedDatabase(db);
+  }
+
+  return db;
+}
+
+module.exports = { initDB };

@@ -1,0 +1,190 @@
+import { useState, useEffect } from 'react';
+import { reportsAPI } from '../lib/api';
+import { BarChart3, TrendingUp, Users, Bot, UserCheck, Percent } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
+
+export default function ReportsPage() {
+    const [stats, setStats] = useState(null);
+    const [categories, setCategories] = useState(null);
+    const [agents, setAgents] = useState([]);
+    const [sources, setSources] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => { loadData(); }, []);
+
+    const loadData = async () => {
+        try {
+            const [sRes, cRes, aRes, srRes] = await Promise.all([
+                reportsAPI.today(),
+                reportsAPI.categories(),
+                reportsAPI.agents(),
+                reportsAPI.sources(),
+            ]);
+            setStats(sRes.data);
+            setCategories(cRes.data);
+            setAgents(aRes.data.agents || []);
+            setSources(srRes.data.sources || []);
+        } catch (err) { console.error(err); }
+        finally { setLoading(false); }
+    };
+
+    if (loading) return <div className="loading-center"><div className="loading-spinner" /></div>;
+
+    const catChartData = categories ? [
+        { name: 'Hot', value: categories.categories.hot, fill: '#ef4444' },
+        { name: 'Warm', value: categories.categories.warm, fill: '#f59e0b' },
+        { name: 'Cold', value: categories.categories.cold, fill: '#3b82f6' },
+        { name: 'Belirsiz', value: categories.categories.unqualified, fill: '#6b7280' },
+    ].filter(d => d.value > 0) : [];
+
+    const aiVsManual = [
+        { name: 'AI Yanıt', value: stats?.ai_responses || 0, fill: '#a855f7' },
+        { name: 'Manuel', value: stats?.manual_responses || 0, fill: '#06b6d4' },
+    ].filter(d => d.value > 0);
+
+    const sourceData = sources.map(s => ({
+        name: s.source === 'instagram' ? 'Instagram' : s.source === 'whatsapp' ? 'WhatsApp' : s.source,
+        value: s.count,
+        fill: s.source === 'instagram' ? '#e1306c' : s.source === 'whatsapp' ? '#25d366' : '#6366f1'
+    }));
+
+    const tooltipStyle = {
+        contentStyle: {
+            background: 'var(--bg-card)', border: '1px solid var(--border-color)',
+            borderRadius: 'var(--radius-md)', color: 'var(--text-primary)', fontSize: 13
+        }
+    };
+
+    return (
+        <div className="animate-fade-in">
+            <div className="page-header">
+                <h1>Raporlar</h1>
+                <p>Performans metrikleri ve analitik veriler</p>
+            </div>
+
+            {/* Top Stats */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 24 }}>
+                {[
+                    { label: 'Gelen Mesajlar', value: stats?.inbound_messages || 0, icon: TrendingUp, color: '#10b981', bg: 'rgba(16,185,129,0.12)' },
+                    { label: 'AI Otomasyon', value: `${stats?.ai_rate || 0}%`, icon: Bot, color: '#a855f7', bg: 'rgba(168,85,247,0.12)' },
+                    { label: 'Yeni Müşteri', value: stats?.new_customers || 0, icon: Users, color: '#06b6d4', bg: 'rgba(6,182,212,0.12)' },
+                    { label: 'Aktif Görüşme', value: stats?.active_conversations || 0, icon: Percent, color: '#f59e0b', bg: 'rgba(245,158,11,0.12)' },
+                ].map((s, i) => (
+                    <div key={i} className="glass-card stat-card">
+                        <div className="stat-icon" style={{ background: s.bg, color: s.color }}><s.icon size={20} /></div>
+                        <div className="stat-value">{s.value}</div>
+                        <div className="stat-label">{s.label}</div>
+                    </div>
+                ))}
+            </div>
+
+            {/* Charts Grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 24 }}>
+                {/* AI vs Manual */}
+                <div className="glass-card" style={{ padding: 20 }}>
+                    <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 16 }}>AI vs Manuel Yanıtlar</h3>
+                    {aiVsManual.length > 0 ? (
+                        <div style={{ height: 200 }}>
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie data={aiVsManual} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={4} dataKey="value" stroke="none">
+                                        {aiVsManual.map((e, i) => <Cell key={i} fill={e.fill} />)}
+                                    </Pie>
+                                    <Tooltip {...tooltipStyle} />
+                                    <Legend />
+                                </PieChart>
+                            </ResponsiveContainer>
+                        </div>
+                    ) : <div className="empty-state" style={{ padding: 40 }}><p>Veri yok</p></div>}
+                </div>
+
+                {/* Categories */}
+                <div className="glass-card" style={{ padding: 20 }}>
+                    <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 16 }}>Müşteri Kategorileri</h3>
+                    {catChartData.length > 0 ? (
+                        <div style={{ height: 200 }}>
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={catChartData}>
+                                    <XAxis dataKey="name" tick={{ fill: 'var(--text-secondary)', fontSize: 12 }} axisLine={false} tickLine={false} />
+                                    <YAxis tick={{ fill: 'var(--text-secondary)', fontSize: 12 }} axisLine={false} tickLine={false} />
+                                    <Tooltip {...tooltipStyle} />
+                                    <Bar dataKey="value" radius={[6, 6, 0, 0]}>
+                                        {catChartData.map((e, i) => <Cell key={i} fill={e.fill} />)}
+                                    </Bar>
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    ) : <div className="empty-state" style={{ padding: 40 }}><p>Veri yok</p></div>}
+                </div>
+            </div>
+
+            {/* Bottom: Agent Performance + Sources */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: 20 }}>
+                {/* Agents */}
+                <div className="glass-card" style={{ padding: 0, overflow: 'hidden' }}>
+                    <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-color)' }}>
+                        <h3 style={{ fontSize: 15, fontWeight: 600 }}>Temsilci Performansı</h3>
+                    </div>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead>
+                            <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                {['Temsilci', 'Aktif', 'Manuel Mesaj', 'Toplam'].map(h => (
+                                    <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>{h}</th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {agents.map(a => (
+                                <tr key={a.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                    <td style={{ padding: '10px 16px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                            <div style={{ width: 32, height: 32, borderRadius: 'var(--radius-sm)', background: a.avatar_color || 'var(--accent-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700, fontSize: 12 }}>
+                                                {a.name?.charAt(0)?.toUpperCase()}
+                                            </div>
+                                            <span style={{ fontWeight: 500, fontSize: 13 }}>{a.name}</span>
+                                        </div>
+                                    </td>
+                                    <td style={{ padding: '10px 16px', fontSize: 13, fontWeight: 600, color: a.active_conversations > 0 ? 'var(--success)' : 'var(--text-secondary)' }}>
+                                        {a.active_conversations}
+                                    </td>
+                                    <td style={{ padding: '10px 16px', fontSize: 13 }}>{a.manual_messages}</td>
+                                    <td style={{ padding: '10px 16px', fontSize: 13 }}>{a.total_conversations}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+
+                {/* Sources */}
+                <div className="glass-card" style={{ padding: 20 }}>
+                    <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 16 }}>Kaynak Dağılımı</h3>
+                    {sourceData.length > 0 ? (
+                        <>
+                            <div style={{ height: 180 }}>
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie data={sourceData} cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={4} dataKey="value" stroke="none">
+                                            {sourceData.map((e, i) => <Cell key={i} fill={e.fill} />)}
+                                        </Pie>
+                                        <Tooltip {...tooltipStyle} />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+                                {sourceData.map((d, i) => (
+                                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                            <div style={{ width: 8, height: 8, borderRadius: '50%', background: d.fill }} />
+                                            <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{d.name}</span>
+                                        </div>
+                                        <span style={{ fontSize: 14, fontWeight: 600 }}>{d.value}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </>
+                    ) : <div className="empty-state"><p>Veri yok</p></div>}
+                </div>
+            </div>
+        </div>
+    );
+}
