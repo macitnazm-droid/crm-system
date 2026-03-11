@@ -132,6 +132,7 @@ function initDB() {
       lead_score INTEGER DEFAULT 0,
       source TEXT DEFAULT 'instagram' CHECK(source IN ('instagram', 'whatsapp', 'api', 'manual')),
       last_message_at DATETIME,
+      unipile_chat_id TEXT DEFAULT '',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
