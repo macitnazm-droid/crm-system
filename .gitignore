@@ -5,3 +5,4 @@ node_modules/
 *.db-wal
 dist/
 .DS_Store
+*.zip
