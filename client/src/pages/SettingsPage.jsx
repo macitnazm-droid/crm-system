@@ -20,8 +20,8 @@ export default function SettingsPage() {
     const [testResult, setTestResult] = useState(null);
 
     // Integration form state
-    const [igForm, setIgForm] = useState({ platform: 'instagram', api_key: '', api_secret: '', page_id: '', webhook_url: '', verify_token: '', is_active: false });
-    const [waForm, setWaForm] = useState({ platform: 'whatsapp', api_key: '', api_secret: '', phone_number_id: '', webhook_url: '', verify_token: '', is_active: false });
+    const [igForm, setIgForm] = useState({ platform: 'instagram', provider: 'meta', api_key: '', api_secret: '', page_id: '', webhook_url: '', verify_token: '', dsn_url: '', is_active: false });
+    const [waForm, setWaForm] = useState({ platform: 'whatsapp', provider: 'meta', api_key: '', api_secret: '', phone_number_id: '', webhook_url: '', verify_token: '', dsn_url: '', is_active: false });
 
     useEffect(() => { loadData(); }, []);
 
@@ -37,9 +37,9 @@ export default function SettingsPage() {
 
             // Form'ları mevcut verilerle doldur
             const ig = ints.find(i => i.platform === 'instagram');
-            if (ig) setIgForm({ ...igForm, ...ig, api_key: ig.api_key || '', api_secret: ig.api_secret || '' });
+            if (ig) setIgForm(prev => ({ ...prev, ...ig, api_key: ig.api_key || '', api_secret: ig.api_secret || '', provider: ig.provider || 'meta', dsn_url: ig.dsn_url || '' }));
             const wa = ints.find(i => i.platform === 'whatsapp');
-            if (wa) setWaForm({ ...waForm, ...wa, api_key: wa.api_key || '', api_secret: wa.api_secret || '' });
+            if (wa) setWaForm(prev => ({ ...prev, ...wa, api_key: wa.api_key || '', api_secret: wa.api_secret || '', provider: wa.provider || 'meta', dsn_url: wa.dsn_url || '' }));
         } catch (err) { console.error(err); }
         finally { setLoading(false); }
     };
@@ -83,6 +83,7 @@ export default function SettingsPage() {
     if (loading) return <div className="loading-center"><div className="loading-spinner" /></div>;
 
     const serverUrl = window.location.origin.replace(':5173', ':3001');
+    const unipileWebhookUrl = `${serverUrl}/api/webhooks/unipile/${user?.company_id}`;
 
     return (
         <div className="animate-fade-in">
@@ -167,49 +168,97 @@ export default function SettingsPage() {
                             </div>
                         </div>
                         <div style={{ padding: 20 }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
-                                <div>
-                                    <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
-                                        <Key size={12} /> Access Token
-                                    </label>
-                                    <input className="input" type="password" placeholder="Instagram Access Token" value={igForm.api_key}
-                                        onChange={e => setIgForm(prev => ({ ...prev, api_key: e.target.value }))} />
-                                </div>
-                                <div>
-                                    <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
-                                        <Shield size={12} /> App Secret
-                                    </label>
-                                    <input className="input" type="password" placeholder="App Secret" value={igForm.api_secret}
-                                        onChange={e => setIgForm(prev => ({ ...prev, api_secret: e.target.value }))} />
-                                </div>
-                                <div>
-                                    <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
-                                        <Globe size={12} /> Page ID
-                                    </label>
-                                    <input className="input" placeholder="Facebook Page ID" value={igForm.page_id}
-                                        onChange={e => setIgForm(prev => ({ ...prev, page_id: e.target.value }))} />
-                                </div>
-                                <div>
-                                    <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
-                                        <Shield size={12} /> Verify Token
-                                    </label>
-                                    <input className="input" placeholder="Webhook Verify Token" value={igForm.verify_token}
-                                        onChange={e => setIgForm(prev => ({ ...prev, verify_token: e.target.value }))} />
-                                </div>
+                            {/* Provider Seçici */}
+                            <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
+                                {['meta', 'unipile'].map(p => (
+                                    <button key={p}
+                                        className={`btn btn-sm ${igForm.provider === p ? 'btn-primary' : 'btn-ghost'}`}
+                                        onClick={() => setIgForm(prev => ({ ...prev, provider: p }))}
+                                        style={{ textTransform: 'capitalize', minWidth: 90 }}>
+                                        {p === 'meta' ? 'Meta (Resmi)' : 'Unipile'}
+                                    </button>
+                                ))}
                             </div>
-                            <div style={{ marginBottom: 14 }}>
-                                <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
-                                    <Webhook size={12} /> Webhook URL (Meta Dashboard'a yapıştırın)
-                                </label>
-                                <div style={{ display: 'flex', gap: 8 }}>
-                                    <input className="input" readOnly value={`${serverUrl}/api/webhooks/instagram`}
-                                        style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', cursor: 'text' }}
-                                        onClick={e => { e.target.select(); navigator.clipboard?.writeText(e.target.value); }} />
-                                </div>
-                                <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-                                    Bu URL'yi Meta Developer Dashboard → Webhooks → Callback URL alanına yapıştırın
-                                </p>
-                            </div>
+
+                            {igForm.provider === 'meta' ? (
+                                <>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
+                                        <div>
+                                            <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                <Key size={12} /> Access Token
+                                            </label>
+                                            <input className="input" type="password" placeholder="Instagram Access Token" value={igForm.api_key}
+                                                onChange={e => setIgForm(prev => ({ ...prev, api_key: e.target.value }))} />
+                                        </div>
+                                        <div>
+                                            <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                <Shield size={12} /> App Secret
+                                            </label>
+                                            <input className="input" type="password" placeholder="App Secret" value={igForm.api_secret}
+                                                onChange={e => setIgForm(prev => ({ ...prev, api_secret: e.target.value }))} />
+                                        </div>
+                                        <div>
+                                            <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                <Globe size={12} /> Page ID
+                                            </label>
+                                            <input className="input" placeholder="Facebook Page ID" value={igForm.page_id}
+                                                onChange={e => setIgForm(prev => ({ ...prev, page_id: e.target.value }))} />
+                                        </div>
+                                        <div>
+                                            <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                <Shield size={12} /> Verify Token
+                                            </label>
+                                            <input className="input" placeholder="Webhook Verify Token" value={igForm.verify_token}
+                                                onChange={e => setIgForm(prev => ({ ...prev, verify_token: e.target.value }))} />
+                                        </div>
+                                    </div>
+                                    <div style={{ marginBottom: 14 }}>
+                                        <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                            <Webhook size={12} /> Webhook URL (Meta Dashboard'a yapıştırın)
+                                        </label>
+                                        <input className="input" readOnly value={`${serverUrl}/api/webhooks/instagram`}
+                                            style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', cursor: 'text' }}
+                                            onClick={e => { e.target.select(); navigator.clipboard?.writeText(e.target.value); }} />
+                                        <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                                            Bu URL'yi Meta Developer Dashboard → Webhooks → Callback URL alanına yapıştırın
+                                        </p>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <div style={{ padding: '10px 14px', marginBottom: 14, borderRadius: 'var(--radius-md)', background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)', fontSize: 12, color: 'var(--text-secondary)' }}>
+                                        Unipile üzerinden Instagram DM entegrasyonu. API anahtarınızı Unipile Dashboard → Settings → API Keys bölümünden alın.
+                                    </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
+                                        <div>
+                                            <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                <Key size={12} /> Unipile API Key
+                                            </label>
+                                            <input className="input" type="password" placeholder="Unipile API Key" value={igForm.api_key}
+                                                onChange={e => setIgForm(prev => ({ ...prev, api_key: e.target.value }))} />
+                                        </div>
+                                        <div>
+                                            <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                <Globe size={12} /> DSN URL
+                                            </label>
+                                            <input className="input" placeholder="https://api1.unipile.com:13433" value={igForm.dsn_url}
+                                                onChange={e => setIgForm(prev => ({ ...prev, dsn_url: e.target.value }))} />
+                                        </div>
+                                    </div>
+                                    <div style={{ marginBottom: 14 }}>
+                                        <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                            <Webhook size={12} /> Webhook URL (Unipile Dashboard'a yapıştırın)
+                                        </label>
+                                        <input className="input" readOnly value={unipileWebhookUrl}
+                                            style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', cursor: 'text' }}
+                                            onClick={e => { e.target.select(); navigator.clipboard?.writeText(e.target.value); }} />
+                                        <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                                            Bu URL'yi Unipile Dashboard → Webhooks bölümüne yapıştırın
+                                        </p>
+                                    </div>
+                                </>
+                            )}
+
                             <div style={{ display: 'flex', gap: 8 }}>
                                 <button className="btn btn-primary btn-sm" onClick={() => saveIntegration(igForm)} disabled={saving}>
                                     {saving ? <Loader size={14} className="spinning" /> : <Save size={14} />} Kaydet
@@ -240,49 +289,97 @@ export default function SettingsPage() {
                             </div>
                         </div>
                         <div style={{ padding: 20 }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
-                                <div>
-                                    <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
-                                        <Key size={12} /> Access Token
-                                    </label>
-                                    <input className="input" type="password" placeholder="WhatsApp Access Token" value={waForm.api_key}
-                                        onChange={e => setWaForm(prev => ({ ...prev, api_key: e.target.value }))} />
-                                </div>
-                                <div>
-                                    <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
-                                        <Shield size={12} /> App Secret
-                                    </label>
-                                    <input className="input" type="password" placeholder="App Secret" value={waForm.api_secret}
-                                        onChange={e => setWaForm(prev => ({ ...prev, api_secret: e.target.value }))} />
-                                </div>
-                                <div>
-                                    <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
-                                        <Phone size={12} /> Phone Number ID
-                                    </label>
-                                    <input className="input" placeholder="WhatsApp Phone Number ID" value={waForm.phone_number_id}
-                                        onChange={e => setWaForm(prev => ({ ...prev, phone_number_id: e.target.value }))} />
-                                </div>
-                                <div>
-                                    <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
-                                        <Shield size={12} /> Verify Token
-                                    </label>
-                                    <input className="input" placeholder="Webhook Verify Token" value={waForm.verify_token}
-                                        onChange={e => setWaForm(prev => ({ ...prev, verify_token: e.target.value }))} />
-                                </div>
+                            {/* Provider Seçici */}
+                            <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
+                                {['meta', 'unipile'].map(p => (
+                                    <button key={p}
+                                        className={`btn btn-sm ${waForm.provider === p ? 'btn-primary' : 'btn-ghost'}`}
+                                        onClick={() => setWaForm(prev => ({ ...prev, provider: p }))}
+                                        style={{ textTransform: 'capitalize', minWidth: 90 }}>
+                                        {p === 'meta' ? 'Meta (Resmi)' : 'Unipile'}
+                                    </button>
+                                ))}
                             </div>
-                            <div style={{ marginBottom: 14 }}>
-                                <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
-                                    <Webhook size={12} /> Webhook URL (Meta Dashboard'a yapıştırın)
-                                </label>
-                                <div style={{ display: 'flex', gap: 8 }}>
-                                    <input className="input" readOnly value={`${serverUrl}/api/webhooks/whatsapp`}
-                                        style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', cursor: 'text' }}
-                                        onClick={e => { e.target.select(); navigator.clipboard?.writeText(e.target.value); }} />
-                                </div>
-                                <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-                                    Bu URL'yi Meta Developer Dashboard → WhatsApp → Configuration → Webhook URL alanına yapıştırın
-                                </p>
-                            </div>
+
+                            {waForm.provider === 'meta' ? (
+                                <>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
+                                        <div>
+                                            <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                <Key size={12} /> Access Token
+                                            </label>
+                                            <input className="input" type="password" placeholder="WhatsApp Access Token" value={waForm.api_key}
+                                                onChange={e => setWaForm(prev => ({ ...prev, api_key: e.target.value }))} />
+                                        </div>
+                                        <div>
+                                            <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                <Shield size={12} /> App Secret
+                                            </label>
+                                            <input className="input" type="password" placeholder="App Secret" value={waForm.api_secret}
+                                                onChange={e => setWaForm(prev => ({ ...prev, api_secret: e.target.value }))} />
+                                        </div>
+                                        <div>
+                                            <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                <Phone size={12} /> Phone Number ID
+                                            </label>
+                                            <input className="input" placeholder="WhatsApp Phone Number ID" value={waForm.phone_number_id}
+                                                onChange={e => setWaForm(prev => ({ ...prev, phone_number_id: e.target.value }))} />
+                                        </div>
+                                        <div>
+                                            <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                <Shield size={12} /> Verify Token
+                                            </label>
+                                            <input className="input" placeholder="Webhook Verify Token" value={waForm.verify_token}
+                                                onChange={e => setWaForm(prev => ({ ...prev, verify_token: e.target.value }))} />
+                                        </div>
+                                    </div>
+                                    <div style={{ marginBottom: 14 }}>
+                                        <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                            <Webhook size={12} /> Webhook URL (Meta Dashboard'a yapıştırın)
+                                        </label>
+                                        <input className="input" readOnly value={`${serverUrl}/api/webhooks/whatsapp`}
+                                            style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', cursor: 'text' }}
+                                            onClick={e => { e.target.select(); navigator.clipboard?.writeText(e.target.value); }} />
+                                        <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                                            Bu URL'yi Meta Developer Dashboard → WhatsApp → Configuration → Webhook URL alanına yapıştırın
+                                        </p>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <div style={{ padding: '10px 14px', marginBottom: 14, borderRadius: 'var(--radius-md)', background: 'rgba(37,211,102,0.06)', border: '1px solid rgba(37,211,102,0.2)', fontSize: 12, color: 'var(--text-secondary)' }}>
+                                        Unipile üzerinden WhatsApp entegrasyonu. API anahtarınızı Unipile Dashboard → Settings → API Keys bölümünden alın.
+                                    </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
+                                        <div>
+                                            <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                <Key size={12} /> Unipile API Key
+                                            </label>
+                                            <input className="input" type="password" placeholder="Unipile API Key" value={waForm.api_key}
+                                                onChange={e => setWaForm(prev => ({ ...prev, api_key: e.target.value }))} />
+                                        </div>
+                                        <div>
+                                            <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                <Globe size={12} /> DSN URL
+                                            </label>
+                                            <input className="input" placeholder="https://api1.unipile.com:13433" value={waForm.dsn_url}
+                                                onChange={e => setWaForm(prev => ({ ...prev, dsn_url: e.target.value }))} />
+                                        </div>
+                                    </div>
+                                    <div style={{ marginBottom: 14 }}>
+                                        <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                            <Webhook size={12} /> Webhook URL (Unipile Dashboard'a yapıştırın)
+                                        </label>
+                                        <input className="input" readOnly value={unipileWebhookUrl}
+                                            style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', cursor: 'text' }}
+                                            onClick={e => { e.target.select(); navigator.clipboard?.writeText(e.target.value); }} />
+                                        <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                                            Bu URL'yi Unipile Dashboard → Webhooks bölümüne yapıştırın
+                                        </p>
+                                    </div>
+                                </>
+                            )}
+
                             <div style={{ display: 'flex', gap: 8 }}>
                                 <button className="btn btn-primary btn-sm" onClick={() => saveIntegration(waForm)} disabled={saving}>
                                     {saving ? <Loader size={14} className="spinning" /> : <Save size={14} />} Kaydet

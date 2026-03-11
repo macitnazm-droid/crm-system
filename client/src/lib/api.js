@@ -98,6 +98,9 @@ export const superAdminAPI = {
     updateCompany: (id, data) => api.patch(`/superadmin/companies/${id}`, data),
     updateCompanyStatus: (id, isActive) => api.patch(`/superadmin/companies/${id}/status`, { is_active: isActive }),
     getStats: () => api.get('/superadmin/stats'),
+    getCompanyUsers: (id) => api.get(`/superadmin/companies/${id}/users`),
+    addCompanyUser: (id, data) => api.post(`/superadmin/companies/${id}/users`, data),
+    removeCompanyUser: (id, userId) => api.delete(`/superadmin/companies/${id}/users/${userId}`),
 };
 
 export default api;

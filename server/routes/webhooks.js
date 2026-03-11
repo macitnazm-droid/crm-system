@@ -233,4 +233,82 @@ async function processIncomingMessage(db, io, data) {
     };
 }
 
+// POST /api/webhooks/unipile/debug — Unipile'dan gelen formatı logla (geçici debug)
+router.post('/unipile/debug', (req, res) => {
+    console.log('=== UNIPILE DEBUG WEBHOOK ===');
+    console.log('Headers:', JSON.stringify(req.headers, null, 2));
+    console.log('Body:', JSON.stringify(req.body, null, 2));
+    console.log('============================');
+    res.status(200).json({ status: 'ok', received: req.body });
+});
+
+// POST /api/webhooks/unipile/:companyId — Unipile webhook
+router.post('/unipile/:companyId', async (req, res) => {
+    try {
+        const db = req.app.locals.db;
+        const io = req.app.locals.io;
+        const companyId = parseInt(req.params.companyId);
+
+        if (!companyId) {
+            return res.status(400).json({ error: 'Geçersiz company_id' });
+        }
+
+        const body = req.body;
+
+        // Unipile farklı event formatları gönderebilir
+        // Format 1: { event, account_id, data: { from_id, from_name, text, provider } }
+        // Format 2: { type, account_id, payload: { sender, text, provider } }
+        let senderId, senderName, messageText, provider;
+
+        if (body.event && body.data) {
+            // Format 1
+            senderId = body.data.from_id || body.data.sender_id || body.data.attendee_id;
+            senderName = body.data.from_name || body.data.sender_name || body.data.attendee_name;
+            messageText = body.data.text || body.data.body || body.data.message;
+            provider = (body.data.provider || body.account_type || '').toUpperCase();
+        } else if (body.type && body.payload) {
+            // Format 2
+            senderId = body.payload.sender?.id || body.payload.from_id;
+            senderName = body.payload.sender?.name || body.payload.from_name;
+            messageText = body.payload.text || body.payload.body;
+            provider = (body.payload.provider || body.account_type || '').toUpperCase();
+        } else {
+            // Bilinmeyen format — logla ve 200 dön
+            console.warn('Unipile bilinmeyen webhook formatı:', JSON.stringify(body).substring(0, 500));
+            return res.status(200).json({ status: 'ok', note: 'unknown format' });
+        }
+
+        if (!senderId || !messageText) {
+            return res.status(200).json({ status: 'ok', note: 'no message content' });
+        }
+
+        // Platform belirle (INSTAGRAM veya WHATSAPP)
+        const source = provider.includes('WHATSAPP') ? 'whatsapp' : 'instagram';
+
+        // Entegrasyonun aktif olup olmadığını kontrol et
+        const integration = db.prepare(
+            'SELECT * FROM integration_settings WHERE company_id = ? AND platform = ? AND provider = ? AND is_active = 1'
+        ).get(companyId, source, 'unipile');
+
+        if (!integration) {
+            console.warn(`Unipile webhook: company_id=${companyId} için aktif ${source} entegrasyonu yok`);
+            return res.status(200).json({ status: 'ok', note: 'no active integration' });
+        }
+
+        await processIncomingMessage(db, io, {
+            company_id: companyId,
+            platform_id: senderId,
+            content: messageText,
+            source,
+            customer_name: senderName,
+        });
+
+        res.status(200).json({ status: 'ok' });
+    } catch (err) {
+        console.error('Unipile webhook error:', err);
+        res.status(500).json({ error: 'Webhook işlenirken hata oluştu' });
+    }
+});
+
 module.exports = router;
+module.exports.processIncomingMessage = processIncomingMessage;

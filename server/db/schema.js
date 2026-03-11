@@ -30,12 +30,35 @@ function initDB() {
     } catch (err) { }
   });
 
+  // Migration: integration_settings tablosuna provider ve dsn_url ekle
+  try {
+    const intInfo = db.prepare(`PRAGMA table_info(integration_settings)`).all();
+    if (intInfo.length > 0 && !intInfo.some(c => c.name === 'provider')) {
+      db.exec(`ALTER TABLE integration_settings ADD COLUMN provider TEXT DEFAULT 'meta'`);
+    }
+    if (intInfo.length > 0 && !intInfo.some(c => c.name === 'dsn_url')) {
+      db.exec(`ALTER TABLE integration_settings ADD COLUMN dsn_url TEXT DEFAULT ''`);
+    }
+  } catch (err) { }
+
   // 2.0 Migration: Companies tablosuna user_limit ekle
   try {
     const companyInfo = db.prepare(`PRAGMA table_info(companies)`).all();
     if (companyInfo.length > 0 && !companyInfo.some(c => c.name === 'user_limit')) {
       db.exec(`ALTER TABLE companies ADD COLUMN user_limit INTEGER DEFAULT 10`);
       console.log('✅ Companies tablosuna user_limit eklendi.');
+    }
+    if (companyInfo.length > 0 && !companyInfo.some(c => c.name === 'subscription_plan')) {
+      db.exec(`ALTER TABLE companies ADD COLUMN subscription_plan TEXT DEFAULT 'free'`);
+    }
+    if (companyInfo.length > 0 && !companyInfo.some(c => c.name === 'subscription_expires_at')) {
+      db.exec(`ALTER TABLE companies ADD COLUMN subscription_expires_at DATETIME`);
+    }
+    if (companyInfo.length > 0 && !companyInfo.some(c => c.name === 'message_limit')) {
+      db.exec(`ALTER TABLE companies ADD COLUMN message_limit INTEGER DEFAULT 500`);
+    }
+    if (companyInfo.length > 0 && !companyInfo.some(c => c.name === 'messages_used')) {
+      db.exec(`ALTER TABLE companies ADD COLUMN messages_used INTEGER DEFAULT 0`);
     }
   } catch (err) { }
 
@@ -205,6 +228,32 @@ function initDB() {
   if (userCount.count === 0) {
     const { seedDatabase } = require('./seed');
     seedDatabase(db);
+  }
+
+  // Migration: company_id'si NULL olan kayıtları düzelt
+  try {
+    const tables = ['users', 'customers', 'conversations', 'messages', 'ai_prompts', 'integration_settings'];
+    tables.forEach(table => {
+      try {
+        db.prepare(`UPDATE ${table} SET company_id = 1 WHERE company_id IS NULL`).run();
+      } catch (e) { /* tablo yoksa atla */ }
+    });
+  } catch (err) { }
+
+  // Super Admin yoksa oluştur
+  try {
+    const superAdmin = db.prepare("SELECT id FROM users WHERE role = 'super_admin'").get();
+    if (!superAdmin) {
+      const bcrypt = require('bcryptjs');
+      const hash = bcrypt.hashSync('superadmin123', 10);
+      db.prepare(`
+        INSERT INTO users (company_id, email, password_hash, name, role, avatar_color, is_active)
+        VALUES (1, 'superadmin@crm.com', ?, 'Süper Admin', 'super_admin', '#8b5cf6', 1)
+      `).run(hash);
+      console.log('👑 Super Admin oluşturuldu: superadmin@crm.com / superadmin123');
+    }
+  } catch (err) {
+    console.error('Super admin oluşturma hatası:', err.message);
   }
 
   return db;

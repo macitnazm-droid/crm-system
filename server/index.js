@@ -65,6 +65,10 @@ app.use('/api/webhooks', require('./routes/webhooks'));
 app.use('/api/integrations', require('./routes/integrations'));
 app.use('/api/superadmin', require('./routes/superadmin'));
 
+// Unipile polling (webhook yerine)
+const { startPolling } = require('./services/unipilePoller');
+startPolling(db, io);
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Bot, Mail, Lock, ArrowRight, Zap } from 'lucide-react';
+import { Bot, Mail, Lock, ArrowRight } from 'lucide-react';
 
 export default function LoginPage() {
     const { login } = useAuth();
-    const [email, setEmail] = useState('admin@crm.com');
-    const [password, setPassword] = useState('password123');
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
@@ -82,10 +82,6 @@ export default function LoginPage() {
                         </button>
                     </form>
 
-                    <div className="login-demo">
-                        <Zap size={14} />
-                        <span>Demo: admin@crm.com / password123</span>
-                    </div>
                 </div>
             </div>
 
