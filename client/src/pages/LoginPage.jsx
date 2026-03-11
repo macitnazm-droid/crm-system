@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Bot, Mail, Lock, ArrowRight } from 'lucide-react';
+import { Mail, Lock, ArrowRight } from 'lucide-react';
+import logo from '../assets/logo.png';
 
 export default function LoginPage() {
     const { login } = useAuth();
@@ -34,9 +35,9 @@ export default function LoginPage() {
                 <div className="login-card glass-card">
                     <div className="login-header">
                         <div className="login-logo">
-                            <Bot size={28} />
+                            <img src={logo} alt="Regista" style={{ width: 56, height: 56, borderRadius: '50%' }} />
                         </div>
-                        <h1>CRM<span className="text-accent">AI</span></h1>
+                        <h1>Regista <span className="text-accent">AICRM</span></h1>
                         <p>Müşteri Hizmetleri Platformu</p>
                     </div>
 

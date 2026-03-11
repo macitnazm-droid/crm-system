@@ -2,8 +2,9 @@ import { NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
     LayoutDashboard, MessageSquare, Users, BarChart3, Settings,
-    Radio, LogOut, Bot, Zap
+    Radio, LogOut, Zap
 } from 'lucide-react';
+import logo from '../assets/logo.png';
 import './Sidebar.css';
 
 export default function Sidebar() {
@@ -27,10 +28,10 @@ export default function Sidebar() {
             <div className="sidebar-header">
                 <div className="sidebar-logo">
                     <div className="logo-icon">
-                        <Bot size={22} />
+                        <img src={logo} alt="Regista" style={{ width: 32, height: 32, borderRadius: '50%' }} />
                     </div>
                     <div className="logo-text">
-                        <span className="logo-title">CRM<span className="logo-ai">AI</span></span>
+                        <span className="logo-title">Regista <span className="logo-ai">AICRM</span></span>
                         <span className="logo-subtitle">Müşteri Platformu</span>
                     </div>
                 </div>
