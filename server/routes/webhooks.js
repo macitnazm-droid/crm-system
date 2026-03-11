@@ -296,6 +296,9 @@ router.post('/unipile/debug', (req, res) => {
     res.status(200).json({ status: 'ok', received: req.body });
 });
 
+// Webhook message deduplication (son 500 mesaj ID'si)
+const processedWebhookMsgIds = new Set();
+
 // POST /api/webhooks/unipile/:companyId — Unipile webhook
 router.post('/unipile/:companyId', async (req, res) => {
     try {
@@ -308,6 +311,19 @@ router.post('/unipile/:companyId', async (req, res) => {
         }
 
         const body = req.body;
+
+        // Duplicate webhook kontrolü (aynı mesaj birden fazla webhook'tan gelebilir)
+        const msgId = body.message_id;
+        if (msgId) {
+            if (processedWebhookMsgIds.has(msgId)) {
+                return res.status(200).json({ status: 'ok', note: 'duplicate' });
+            }
+            processedWebhookMsgIds.add(msgId);
+            if (processedWebhookMsgIds.size > 500) {
+                const arr = [...processedWebhookMsgIds];
+                arr.slice(0, 200).forEach(id => processedWebhookMsgIds.delete(id));
+            }
+        }
 
         // Her webhook'u tam logla
         console.log('🔔 Unipile webhook body:', JSON.stringify(body).substring(0, 2000));
