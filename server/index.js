@@ -67,9 +67,9 @@ app.use('/api/integrations', require('./routes/integrations'));
 app.use('/api/superadmin', require('./routes/superadmin'));
 app.use('/api/appointments', require('./routes/appointments'));
 
-// Unipile polling — webhook aktifken devre dışı
-// const { startPolling } = require('./services/unipilePoller');
-// startPolling(db, io);
+// Unipile polling — webhook ile birlikte çalışır (yedek)
+const { startPolling } = require('./services/unipilePoller');
+startPolling(db, io);
 
 // Render free tier uyanık tut (her 4 dakikada self-ping)
 if (process.env.NODE_ENV === 'production') {
