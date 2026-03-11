@@ -20,8 +20,10 @@ export default function SettingsPage() {
     const [testResult, setTestResult] = useState(null);
 
     // Integration form state
-    const [igForm, setIgForm] = useState({ platform: 'instagram', provider: 'meta', api_key: '', api_secret: '', page_id: '', webhook_url: '', verify_token: '', dsn_url: '', is_active: false });
-    const [waForm, setWaForm] = useState({ platform: 'whatsapp', provider: 'meta', api_key: '', api_secret: '', phone_number_id: '', webhook_url: '', verify_token: '', dsn_url: '', is_active: false });
+    const [igForm, setIgForm] = useState({ platform: 'instagram', provider: 'meta', api_key: '', api_secret: '', page_id: '', webhook_url: '', verify_token: '', dsn_url: '', unipile_account_id: '', is_active: false });
+    const [waForm, setWaForm] = useState({ platform: 'whatsapp', provider: 'meta', api_key: '', api_secret: '', phone_number_id: '', webhook_url: '', verify_token: '', dsn_url: '', unipile_account_id: '', is_active: false });
+    const [unipileAccounts, setUnipileAccounts] = useState([]);
+    const [loadingAccounts, setLoadingAccounts] = useState(false);
 
     useEffect(() => { loadData(); }, []);
 
@@ -37,11 +39,25 @@ export default function SettingsPage() {
 
             // Form'ları mevcut verilerle doldur
             const ig = ints.find(i => i.platform === 'instagram');
-            if (ig) setIgForm(prev => ({ ...prev, ...ig, api_key: ig.api_key || '', api_secret: ig.api_secret || '', provider: ig.provider || 'meta', dsn_url: ig.dsn_url || '' }));
+            if (ig) setIgForm(prev => ({ ...prev, ...ig, api_key: ig.api_key || '', api_secret: ig.api_secret || '', provider: ig.provider || 'meta', dsn_url: ig.dsn_url || '', unipile_account_id: ig.unipile_account_id || '' }));
             const wa = ints.find(i => i.platform === 'whatsapp');
-            if (wa) setWaForm(prev => ({ ...prev, ...wa, api_key: wa.api_key || '', api_secret: wa.api_secret || '', provider: wa.provider || 'meta', dsn_url: wa.dsn_url || '' }));
+            if (wa) setWaForm(prev => ({ ...prev, ...wa, api_key: wa.api_key || '', api_secret: wa.api_secret || '', provider: wa.provider || 'meta', dsn_url: wa.dsn_url || '', unipile_account_id: wa.unipile_account_id || '' }));
+
+            // Unipile hesaplarını çek (eğer Unipile provider kullanılıyorsa)
+            if ((ig?.provider === 'unipile' && ig?.api_key) || (wa?.provider === 'unipile' && wa?.api_key)) {
+                fetchUnipileAccounts();
+            }
         } catch (err) { console.error(err); }
         finally { setLoading(false); }
+    };
+
+    const fetchUnipileAccounts = async () => {
+        setLoadingAccounts(true);
+        try {
+            const res = await integrationsAPI.unipileAccounts();
+            setUnipileAccounts(res.data.accounts || []);
+        } catch (err) { console.error(err); }
+        finally { setLoadingAccounts(false); }
     };
 
     const saveIntegration = async (formData) => {
@@ -251,6 +267,34 @@ export default function SettingsPage() {
                                                 onChange={e => setIgForm(prev => ({ ...prev, dsn_url: e.target.value }))} />
                                         </div>
                                     </div>
+                                    {/* Unipile Hesap Seçici */}
+                                    <div style={{ marginBottom: 14 }}>
+                                        <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                            <Instagram size={18} /> Unipile Instagram Hesabı
+                                        </label>
+                                        <div style={{ display: 'flex', gap: 8 }}>
+                                            <select className="input" value={igForm.unipile_account_id}
+                                                onChange={e => setIgForm(prev => ({ ...prev, unipile_account_id: e.target.value }))}
+                                                style={{ flex: 1 }}>
+                                                <option value="">-- Hesap Seçin --</option>
+                                                {unipileAccounts.filter(a => a.type.includes('INSTAGRAM')).map(a => (
+                                                    <option key={a.id} value={a.id}>{a.name} ({a.status})</option>
+                                                ))}
+                                                {unipileAccounts.length > 0 && unipileAccounts.filter(a => a.type.includes('INSTAGRAM')).length === 0 && (
+                                                    <option disabled>Instagram hesabı bulunamadı</option>
+                                                )}
+                                            </select>
+                                            <button className="btn btn-sm btn-secondary" onClick={fetchUnipileAccounts} disabled={loadingAccounts}
+                                                title="Hesapları yenile">
+                                                {loadingAccounts ? <Loader size={14} className="spinning" /> : 'Yenile'}
+                                            </button>
+                                        </div>
+                                        {!igForm.unipile_account_id && (
+                                            <p style={{ fontSize: 11, color: 'var(--warning, #f59e0b)', marginTop: 4 }}>
+                                                Mesajların doğru şirkete yönlendirilmesi için hesap seçimi zorunludur
+                                            </p>
+                                        )}
+                                    </div>
                                     <div style={{ marginBottom: 14 }}>
                                         <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
                                             <Webhook size={12} /> Webhook URL (Unipile Dashboard'a yapıştırın)
@@ -371,6 +415,34 @@ export default function SettingsPage() {
                                             <input className="input" placeholder="https://api1.unipile.com:13433" value={waForm.dsn_url}
                                                 onChange={e => setWaForm(prev => ({ ...prev, dsn_url: e.target.value }))} />
                                         </div>
+                                    </div>
+                                    {/* Unipile Hesap Seçici */}
+                                    <div style={{ marginBottom: 14 }}>
+                                        <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                            <MessageCircle size={14} /> Unipile WhatsApp Hesabı
+                                        </label>
+                                        <div style={{ display: 'flex', gap: 8 }}>
+                                            <select className="input" value={waForm.unipile_account_id}
+                                                onChange={e => setWaForm(prev => ({ ...prev, unipile_account_id: e.target.value }))}
+                                                style={{ flex: 1 }}>
+                                                <option value="">-- Hesap Seçin --</option>
+                                                {unipileAccounts.filter(a => a.type.includes('WHATSAPP')).map(a => (
+                                                    <option key={a.id} value={a.id}>{a.name} ({a.status})</option>
+                                                ))}
+                                                {unipileAccounts.length > 0 && unipileAccounts.filter(a => a.type.includes('WHATSAPP')).length === 0 && (
+                                                    <option disabled>WhatsApp hesabı bulunamadı</option>
+                                                )}
+                                            </select>
+                                            <button className="btn btn-sm btn-secondary" onClick={fetchUnipileAccounts} disabled={loadingAccounts}
+                                                title="Hesapları yenile">
+                                                {loadingAccounts ? <Loader size={14} className="spinning" /> : 'Yenile'}
+                                            </button>
+                                        </div>
+                                        {!waForm.unipile_account_id && (
+                                            <p style={{ fontSize: 11, color: 'var(--warning, #f59e0b)', marginTop: 4 }}>
+                                                Mesajların doğru şirkete yönlendirilmesi için hesap seçimi zorunludur
+                                            </p>
+                                        )}
                                     </div>
                                     <div style={{ marginBottom: 14 }}>
                                         <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>

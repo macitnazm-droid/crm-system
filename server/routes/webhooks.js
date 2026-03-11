@@ -370,20 +370,33 @@ router.post('/unipile/:companyId', async (req, res) => {
         // Platform belirle (INSTAGRAM veya WHATSAPP)
         const source = provider.includes('WHATSAPP') ? 'whatsapp' : 'instagram';
 
-        // Entegrasyonun aktif olup olmadığını kontrol et
-        const integration = db.prepare(
-            'SELECT * FROM integration_settings WHERE company_id = ? AND platform = ? AND provider = ? AND is_active = 1'
-        ).get(companyId, source, 'unipile');
+        // Önce account_id ile doğru şirketi bul (Unipile webhook'ları "All Accounts" olabilir)
+        const webhookAccountId = body.account_id;
+        let integration;
+        if (webhookAccountId) {
+            integration = db.prepare(
+                "SELECT * FROM integration_settings WHERE unipile_account_id = ? AND provider = 'unipile' AND is_active = 1"
+            ).get(webhookAccountId);
+        }
+        // Fallback: URL'deki companyId ile dene
+        if (!integration) {
+            integration = db.prepare(
+                'SELECT * FROM integration_settings WHERE company_id = ? AND platform = ? AND provider = ? AND is_active = 1'
+            ).get(companyId, source, 'unipile');
+        }
 
         if (!integration) {
-            console.warn(`Unipile webhook: company_id=${companyId} için aktif ${source} entegrasyonu yok`);
+            console.warn(`Unipile webhook: account_id=${webhookAccountId}, company_id=${companyId} için aktif ${source} entegrasyonu yok`);
             return res.status(200).json({ status: 'ok', note: 'no active integration' });
         }
 
-        console.log(`📨 Unipile webhook (${source}): ${senderName || senderId} → "${messageText.substring(0, 60)}"`);
+        // Doğru company_id'yi integration'dan al (URL'deki yerine)
+        const actualCompanyId = integration.company_id;
+
+        console.log(`📨 Unipile webhook (${source}, company:${actualCompanyId}): ${senderName || senderId} → "${messageText.substring(0, 60)}"`);
 
         await processIncomingMessage(db, io, {
-            company_id: companyId,
+            company_id: actualCompanyId,
             platform_id: senderId,
             content: messageText,
             source,

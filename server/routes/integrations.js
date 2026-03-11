@@ -24,11 +24,52 @@ router.get('/', authMiddleware, (req, res) => {
     }
 });
 
+// GET /api/integrations/unipile-accounts — Unipile'daki bağlı hesapları listele
+router.get('/unipile-accounts', authMiddleware, async (req, res) => {
+    try {
+        const db = req.app.locals.db;
+        const companyId = req.user.company_id;
+
+        // Bu şirketin Unipile ayarlarından birini al (api_key ve dsn_url için)
+        const settings = db.prepare(
+            "SELECT api_key, dsn_url FROM integration_settings WHERE company_id = ? AND provider = 'unipile' AND api_key != '' AND dsn_url != '' LIMIT 1"
+        ).get(companyId);
+
+        if (!settings) {
+            return res.json({ accounts: [], message: 'Önce Unipile API Key ve DSN URL kaydedin' });
+        }
+
+        const fetch = (await import('node-fetch')).default;
+        const dsn = settings.dsn_url.startsWith('http') ? settings.dsn_url.replace(/\/$/, '') : `https://${settings.dsn_url.replace(/\/$/, '')}`;
+        const response = await fetch(`${dsn}/api/v1/accounts`, {
+            headers: { 'X-API-KEY': settings.api_key, 'Accept': 'application/json' }
+        });
+
+        if (!response.ok) {
+            return res.json({ accounts: [], message: `Unipile API hatası: ${response.status}` });
+        }
+
+        const data = await response.json();
+        const items = data.items || data.accounts || [];
+        const accounts = items.map(a => ({
+            id: a.id,
+            name: a.name || a.username || a.identifier || a.id,
+            type: (a.type || a.provider || '').toUpperCase(),
+            status: a.status || 'unknown'
+        }));
+
+        res.json({ accounts });
+    } catch (err) {
+        console.error('Unipile accounts error:', err);
+        res.status(500).json({ accounts: [], message: 'Hesaplar yüklenirken hata: ' + err.message });
+    }
+});
+
 // POST /api/integrations — Yeni entegrasyon ekle/güncelle
 router.post('/', authMiddleware, adminOnly, (req, res) => {
     try {
         const db = req.app.locals.db;
-        const { platform, api_key, api_secret, webhook_url, phone_number_id, page_id, verify_token, is_active, provider, dsn_url } = req.body;
+        const { platform, api_key, api_secret, webhook_url, phone_number_id, page_id, verify_token, is_active, provider, dsn_url, unipile_account_id } = req.body;
         const companyId = req.user.company_id;
 
         if (!platform || !['instagram', 'whatsapp'].includes(platform)) {
@@ -56,6 +97,7 @@ router.post('/', authMiddleware, adminOnly, (req, res) => {
             if (is_active !== undefined) { updates.push('is_active = ?'); params.push(is_active ? 1 : 0); }
             if (provider !== undefined) { updates.push('provider = ?'); params.push(provider); }
             if (dsn_url !== undefined) { updates.push('dsn_url = ?'); params.push(dsn_url); }
+            if (unipile_account_id !== undefined) { updates.push('unipile_account_id = ?'); params.push(unipile_account_id); }
 
             updates.push('updated_at = ?'); params.push(new Date().toISOString());
 
@@ -72,9 +114,9 @@ router.post('/', authMiddleware, adminOnly, (req, res) => {
         } else {
             // Yeni kayıt
             db.prepare(`
-        INSERT INTO integration_settings (company_id, platform, api_key, api_secret, webhook_url, phone_number_id, page_id, verify_token, is_active, provider, dsn_url, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(companyId, platform, api_key || '', api_secret || '', webhook_url || '', phone_number_id || '', page_id || '', verify_token || '', is_active ? 1 : 0, provider || 'meta', dsn_url || '', new Date().toISOString(), new Date().toISOString());
+        INSERT INTO integration_settings (company_id, platform, api_key, api_secret, webhook_url, phone_number_id, page_id, verify_token, is_active, provider, dsn_url, unipile_account_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(companyId, platform, api_key || '', api_secret || '', webhook_url || '', phone_number_id || '', page_id || '', verify_token || '', is_active ? 1 : 0, provider || 'meta', dsn_url || '', unipile_account_id || '', new Date().toISOString(), new Date().toISOString());
 
             const created = db.prepare('SELECT * FROM integration_settings WHERE platform = ? AND company_id = ?').get(platform, companyId);
             res.json({ integration: { ...created, api_key: created.api_key ? '••••••••' + created.api_key.slice(-4) : '', api_secret: created.api_secret ? '••••••••' + created.api_secret.slice(-4) : '' } });

@@ -14,7 +14,7 @@ async function pollAll(db, io) {
     let integrations;
     try {
         integrations = db.prepare(
-            "SELECT * FROM integration_settings WHERE provider = 'unipile' AND is_active = 1 AND api_key != '' AND dsn_url != ''"
+            "SELECT * FROM integration_settings WHERE provider = 'unipile' AND is_active = 1 AND api_key != '' AND dsn_url != '' AND unipile_account_id != ''"
         ).all();
     } catch (err) {
         return;
@@ -46,8 +46,9 @@ async function pollIntegration(db, io, integration) {
     const since = lastPolledAt.get(key);
     const nowIso = new Date().toISOString();
 
-    // Unipile: son konuşmaları getir
-    const chatsRes = await fetch(`${dsn}/api/v1/chats?limit=30`, {
+    // Unipile: son konuşmaları getir (account_id ile filtrele)
+    const accountFilter = integration.unipile_account_id ? `&account_id=${integration.unipile_account_id}` : '';
+    const chatsRes = await fetch(`${dsn}/api/v1/chats?limit=30${accountFilter}`, {
         headers: { 'X-API-KEY': integration.api_key, 'Accept': 'application/json' }
     });
 

@@ -91,6 +91,7 @@ export const integrationsAPI = {
     list: () => api.get('/integrations'),
     save: (data) => api.post('/integrations', data),
     test: (platform) => api.post('/integrations/test', { platform }),
+    unipileAccounts: () => api.get('/integrations/unipile-accounts'),
 };
 
 // Appointments

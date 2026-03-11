@@ -41,7 +41,7 @@ function initDB() {
     }
   } catch (err) { }
 
-  // Migration: integration_settings tablosuna provider ve dsn_url ekle
+  // Migration: integration_settings tablosuna provider, dsn_url, unipile_account_id ekle
   try {
     const intInfo = db.prepare(`PRAGMA table_info(integration_settings)`).all();
     if (intInfo.length > 0 && !intInfo.some(c => c.name === 'provider')) {
@@ -49,6 +49,9 @@ function initDB() {
     }
     if (intInfo.length > 0 && !intInfo.some(c => c.name === 'dsn_url')) {
       db.exec(`ALTER TABLE integration_settings ADD COLUMN dsn_url TEXT DEFAULT ''`);
+    }
+    if (intInfo.length > 0 && !intInfo.some(c => c.name === 'unipile_account_id')) {
+      db.exec(`ALTER TABLE integration_settings ADD COLUMN unipile_account_id TEXT DEFAULT ''`);
     }
   } catch (err) { }
 
@@ -194,6 +197,7 @@ function initDB() {
       is_active INTEGER DEFAULT 0,
       provider TEXT DEFAULT 'meta',
       dsn_url TEXT DEFAULT '',
+      unipile_account_id TEXT DEFAULT '',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
