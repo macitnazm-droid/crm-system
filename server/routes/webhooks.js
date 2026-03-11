@@ -309,6 +309,9 @@ router.post('/unipile/:companyId', async (req, res) => {
 
         const body = req.body;
 
+        // Her webhook'u tam logla (ilk 800 karakter)
+        console.log('🔔 Unipile webhook body:', JSON.stringify(body).substring(0, 800));
+
         // Unipile webhook formatları
         let senderId, senderName, messageText, provider, chatId;
 
@@ -317,9 +320,16 @@ router.post('/unipile/:companyId', async (req, res) => {
             const attendee = body.attendees?.[0];
             senderId = attendee?.attendee_provider_id || attendee?.attendee_id;
             senderName = attendee?.attendee_name;
-            messageText = body.message?.text || body.message?.body || body.text || body.content;
+            messageText = body.message?.text || body.message?.body || body.message?.content
+                || body.text || body.content || body.message_text;
             provider = (body.account_type || '').toUpperCase();
             chatId = body.chat_id;
+
+            // Kendi gönderdiğimiz mesajları işleme (sonsuz döngü önleme)
+            if (body.message?.is_sender === true || body.message?.sender === 'me') {
+                console.log('⏭ Kendi mesajımız, atlanıyor');
+                return res.status(200).json({ status: 'ok', note: 'own message' });
+            }
         } else if (body.event && body.data) {
             // Format 1
             senderId = body.data.from_id || body.data.sender_id || body.data.attendee_id;
@@ -340,7 +350,10 @@ router.post('/unipile/:companyId', async (req, res) => {
             return res.status(200).json({ status: 'ok', note: 'unknown format' });
         }
 
+        console.log(`🔍 Parsed: senderId=${senderId}, text="${messageText?.substring(0, 50)}", chatId=${chatId}, provider=${provider}`);
+
         if (!senderId || !messageText) {
+            console.warn(`⚠️ Eksik alan: senderId=${senderId}, messageText=${messageText}`);
             return res.status(200).json({ status: 'ok', note: 'no message content' });
         }
 
