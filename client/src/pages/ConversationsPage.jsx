@@ -39,11 +39,13 @@ export default function ConversationsPage() {
         socket.on('message:new', handleNewMessage);
         socket.on('conversation:updated', handleConvUpdate);
         socket.on('conversation:ai_toggled', handleConvUpdate);
+        socket.on('customer:categorized', handleConvUpdate);
 
         return () => {
             socket.off('message:new', handleNewMessage);
             socket.off('conversation:updated', handleConvUpdate);
             socket.off('conversation:ai_toggled', handleConvUpdate);
+            socket.off('customer:categorized', handleConvUpdate);
         };
     }, [socket, selected]);
 
@@ -62,10 +64,12 @@ export default function ConversationsPage() {
 
     const selectConversation = async (id) => {
         setSelected(id);
+        setConversations(prev => prev.map(c => c.id === id ? { ...c, unread_count: 0 } : c));
         try {
             const res = await conversationsAPI.get(id);
             setConvDetail(res.data.conversation);
             setMessages(res.data.messages || []);
+            conversationsAPI.markRead(id).catch(() => {});
         } catch (err) { console.error(err); }
     };
 

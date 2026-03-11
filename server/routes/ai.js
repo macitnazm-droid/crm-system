@@ -127,6 +127,19 @@ router.patch('/prompts/:id', authMiddleware, adminOnly, (req, res) => {
     }
 });
 
+// DELETE /api/ai/prompts/:id
+router.delete('/prompts/:id', authMiddleware, adminOnly, (req, res) => {
+    try {
+        const db = req.app.locals.db;
+        const companyId = req.user.company_id;
+        const result = db.prepare('DELETE FROM ai_prompts WHERE id = ? AND company_id = ?').run(req.params.id, companyId);
+        if (result.changes === 0) return res.status(404).json({ error: 'Prompt bulunamadı' });
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: 'Prompt silinirken hata oluştu' });
+    }
+});
+
 // POST /api/ai/categorize
 router.post('/categorize', authMiddleware, async (req, res) => {
     try {

@@ -46,6 +46,7 @@ export const conversationsAPI = {
     toggleAI: (id, enabled) => api.patch(`/conversations/${id}/ai`, { ai_enabled: enabled }),
     assign: (id, agentId) => api.patch(`/conversations/${id}/assign`, { agent_id: agentId }),
     updateStatus: (id, status) => api.patch(`/conversations/${id}/status`, { status }),
+    markRead: (id) => api.patch(`/conversations/${id}/read`),
 };
 
 // Messages
@@ -67,6 +68,7 @@ export const aiAPI = {
     getPrompts: () => api.get('/ai/prompts'),
     createPrompt: (data) => api.post('/ai/prompts', data),
     updatePrompt: (id, data) => api.patch(`/ai/prompts/${id}`, data),
+    deletePrompt: (id) => api.delete(`/ai/prompts/${id}`),
     categorize: (customerId) => api.post('/ai/categorize', { customer_id: customerId }),
 };
 

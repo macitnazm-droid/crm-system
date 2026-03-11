@@ -155,6 +155,17 @@ router.patch('/:id/assign', authMiddleware, (req, res) => {
     }
 });
 
+// PATCH /api/conversations/:id/read — Okundu işaretle
+router.patch('/:id/read', authMiddleware, (req, res) => {
+    try {
+        const db = req.app.locals.db;
+        db.prepare('UPDATE conversations SET unread_count = 0 WHERE id = ? AND company_id = ?').run(req.params.id, req.user.company_id);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: 'Güncelleme hatası' });
+    }
+});
+
 // PATCH /api/conversations/:id/status
 router.patch('/:id/status', authMiddleware, (req, res) => {
     try {

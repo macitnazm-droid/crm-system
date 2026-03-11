@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import {
     Settings, Bot, Save, Plus, Eye, EyeOff, AlertCircle,
     Instagram, MessageCircle, Link2, CheckCircle, X, Loader,
-    Webhook, Globe, Key, Phone, Shield
+    Webhook, Globe, Key, Phone, Shield, Trash2
 } from 'lucide-react';
 
 export default function SettingsPage() {
@@ -70,6 +70,12 @@ export default function SettingsPage() {
         try { await aiAPI.updatePrompt(id, data); setEditingPrompt(null); loadData(); }
         catch (err) { console.error(err); }
         finally { setSaving(false); }
+    };
+
+    const deletePrompt = async (id) => {
+        if (!window.confirm('Bu promptu silmek istediğinize emin misiniz?')) return;
+        try { await aiAPI.deletePrompt(id); loadData(); }
+        catch (err) { console.error(err); }
     };
 
     const createPrompt = async () => {
@@ -476,6 +482,9 @@ export default function SettingsPage() {
                                     </button>
                                     <button className="btn btn-sm btn-ghost" onClick={() => savePrompt(p.id, { is_active: !p.is_active })}>
                                         {p.is_active ? 'Deaktif' : 'Aktif'}
+                                    </button>
+                                    <button className="btn btn-sm btn-ghost" onClick={() => deletePrompt(p.id)} style={{ color: 'var(--error)' }}>
+                                        <Trash2 size={14} />
                                     </button>
                                 </div>
                             </div>
