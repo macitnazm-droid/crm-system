@@ -51,11 +51,23 @@ router.get('/unipile-accounts', authMiddleware, async (req, res) => {
 
         const data = await response.json();
         const items = data.items || data.accounts || [];
+
+        // Başka şirketlere atanmış account_id'leri bul
+        const takenAccounts = db.prepare(
+            "SELECT unipile_account_id FROM integration_settings WHERE provider = 'unipile' AND unipile_account_id != '' AND company_id != ?"
+        ).all(companyId).map(r => r.unipile_account_id);
+
+        // Bu şirketin kendi atanmış account_id'leri
+        const ownAccounts = db.prepare(
+            "SELECT unipile_account_id FROM integration_settings WHERE provider = 'unipile' AND unipile_account_id != '' AND company_id = ?"
+        ).all(companyId).map(r => r.unipile_account_id);
+
         const accounts = items.map(a => ({
             id: a.id,
             name: a.name || a.username || a.identifier || a.id,
             type: (a.type || a.provider || '').toUpperCase(),
-            status: a.status || 'unknown'
+            status: a.status || 'unknown',
+            taken: takenAccounts.includes(a.id) && !ownAccounts.includes(a.id)
         }));
 
         res.json({ accounts });

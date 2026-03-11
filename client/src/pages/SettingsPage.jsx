@@ -278,7 +278,9 @@ export default function SettingsPage() {
                                                 style={{ flex: 1 }}>
                                                 <option value="">-- Hesap Seçin --</option>
                                                 {unipileAccounts.filter(a => a.type.includes('INSTAGRAM')).map(a => (
-                                                    <option key={a.id} value={a.id}>{a.name} ({a.status})</option>
+                                                    <option key={a.id} value={a.id} disabled={a.taken}>
+                                                        {a.name} ({a.status}){a.taken ? ' - Baska sirkete atanmis' : ''}
+                                                    </option>
                                                 ))}
                                                 {unipileAccounts.length > 0 && unipileAccounts.filter(a => a.type.includes('INSTAGRAM')).length === 0 && (
                                                     <option disabled>Instagram hesabı bulunamadı</option>
@@ -427,7 +429,9 @@ export default function SettingsPage() {
                                                 style={{ flex: 1 }}>
                                                 <option value="">-- Hesap Seçin --</option>
                                                 {unipileAccounts.filter(a => a.type.includes('WHATSAPP')).map(a => (
-                                                    <option key={a.id} value={a.id}>{a.name} ({a.status})</option>
+                                                    <option key={a.id} value={a.id} disabled={a.taken}>
+                                                        {a.name} ({a.status}){a.taken ? ' - Baska sirkete atanmis' : ''}
+                                                    </option>
                                                 ))}
                                                 {unipileAccounts.length > 0 && unipileAccounts.filter(a => a.type.includes('WHATSAPP')).length === 0 && (
                                                     <option disabled>WhatsApp hesabı bulunamadı</option>
