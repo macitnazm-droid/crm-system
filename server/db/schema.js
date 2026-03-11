@@ -30,6 +30,14 @@ function initDB() {
     } catch (err) { }
   });
 
+  // Migration: customers tablosuna unipile_chat_id ekle
+  try {
+    const custInfo = db.prepare(`PRAGMA table_info(customers)`).all();
+    if (custInfo.length > 0 && !custInfo.some(c => c.name === 'unipile_chat_id')) {
+      db.exec(`ALTER TABLE customers ADD COLUMN unipile_chat_id TEXT DEFAULT ''`);
+    }
+  } catch (err) { }
+
   // Migration: integration_settings tablosuna provider ve dsn_url ekle
   try {
     const intInfo = db.prepare(`PRAGMA table_info(integration_settings)`).all();

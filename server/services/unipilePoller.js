@@ -105,13 +105,20 @@ async function pollIntegration(db, io, integration) {
 
             console.log(`📨 Unipile yeni mesaj (${source}): ${senderName || senderId} → "${text.substring(0, 60)}"`);
 
-            await processIncomingMessage(db, io, {
+            const result = await processIncomingMessage(db, io, {
                 company_id: integration.company_id,
                 platform_id: senderId,
                 content: text,
                 source,
                 customer_name: senderName,
             });
+
+            // chat_id'yi müşteri kaydına sakla (outbound için)
+            if (result?.customer?.id && chatId) {
+                try {
+                    db.prepare('UPDATE customers SET unipile_chat_id = ? WHERE id = ? AND (unipile_chat_id IS NULL OR unipile_chat_id = ?)').run(chatId, result.customer.id, '');
+                } catch (e) { }
+            }
         }
     }
 

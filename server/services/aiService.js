@@ -30,7 +30,7 @@ class AIService {
             const system = `${systemPrompt}\n\nMüşteri Bilgileri:\n- İsim: ${customerInfo.name || 'Bilinmiyor'}\n- Kaynak: ${customerInfo.source || 'Bilinmiyor'}\n- Kategori: ${customerInfo.category || 'Belirlenmemiş'}`;
 
             const response = await this.claude.messages.create({
-                model: 'claude-sonnet-4-20250514',
+                model: 'claude-sonnet-4-6',
                 max_tokens: 500,
                 system: system,
                 messages: messages
@@ -95,7 +95,7 @@ class AIService {
                 .join('\n');
 
             const response = await this.claude.messages.create({
-                model: 'claude-sonnet-4-20250514',
+                model: 'claude-sonnet-4-6',
                 max_tokens: 200,
                 system: 'Müşteri mesajlarını analiz et ve JSON formatında kategorize et. Yanıt sadece JSON olsun.',
                 messages: [{

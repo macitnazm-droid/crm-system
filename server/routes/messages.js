@@ -82,6 +82,35 @@ router.post('/send', authMiddleware, (req, res) => {
         // Real-time broadcast (Sadece aynı şirkete)
         io.to(`company:${companyId}`).emit('message:new', { message, conversation_id });
 
+        // Unipile üzerinden gerçek mesaj gönder
+        try {
+            const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(conversation.customer_id);
+            const integration = db.prepare(
+                "SELECT * FROM integration_settings WHERE company_id = ? AND platform = ? AND provider = 'unipile' AND is_active = 1"
+            ).get(companyId, conversation.customer_source || 'instagram');
+
+            if (integration && customer?.unipile_chat_id) {
+                const fetch = (await import('node-fetch')).default;
+                const dsn = integration.dsn_url.startsWith('http')
+                    ? integration.dsn_url.replace(/\/$/, '')
+                    : `https://${integration.dsn_url.replace(/\/$/, '')}`;
+
+                const sendRes = await fetch(`${dsn}/api/v1/chats/${customer.unipile_chat_id}/messages`, {
+                    method: 'POST',
+                    headers: { 'X-API-KEY': integration.api_key, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: content })
+                });
+
+                if (!sendRes.ok) {
+                    console.warn(`Unipile mesaj gönderme hatası: ${sendRes.status}`);
+                } else {
+                    console.log(`📤 Unipile'a mesaj gönderildi: "${content.substring(0, 50)}"`);
+                }
+            }
+        } catch (unipileErr) {
+            console.error('Unipile outbound hatası:', unipileErr.message);
+        }
+
         res.json({ message });
     } catch (err) {
         console.error('Send message error:', err);
