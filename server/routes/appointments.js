@@ -9,7 +9,7 @@ router.get('/', authMiddleware, (req, res) => {
         const db = req.app.locals.db;
         const companyId = req.user.company_id;
         const appointments = db.prepare(`
-            SELECT a.*, cu.name as customer_db_name, cu.phone as customer_db_phone
+            SELECT a.*, cu.name as customer_db_name, cu.phone as customer_db_phone, cu.source as customer_source
             FROM appointments a
             LEFT JOIN customers cu ON a.customer_id = cu.id
             WHERE a.company_id = ?
