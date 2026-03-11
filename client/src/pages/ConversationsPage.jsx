@@ -20,6 +20,7 @@ export default function ConversationsPage() {
     const [search, setSearch] = useState('');
     const [filter, setFilter] = useState('all');
     const messagesEndRef = useRef(null);
+    const selectedRef = useRef(null);
 
     useEffect(() => { loadConversations(); }, [filter]);
 
@@ -31,6 +32,7 @@ export default function ConversationsPage() {
                     if (prev.some(m => m.id === data.message.id)) return prev;
                     return [...prev, data.message];
                 });
+                conversationsAPI.markRead(data.conversation_id).catch(() => {});
             }
             loadConversations();
         };
@@ -58,12 +60,16 @@ export default function ConversationsPage() {
     const loadConversations = async () => {
         try {
             const res = await conversationsAPI.list({ status: filter !== 'all' ? filter : undefined });
-            setConversations(res.data.conversations || []);
+            const convs = (res.data.conversations || []).map(c =>
+                c.id === selectedRef.current ? { ...c, unread_count: 0 } : c
+            );
+            setConversations(convs);
         } catch (err) { console.error(err); }
     };
 
     const selectConversation = async (id) => {
         setSelected(id);
+        selectedRef.current = id;
         setConversations(prev => prev.map(c => c.id === id ? { ...c, unread_count: 0 } : c));
         try {
             const res = await conversationsAPI.get(id);

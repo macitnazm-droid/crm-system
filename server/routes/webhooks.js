@@ -216,10 +216,10 @@ async function processIncomingMessage(db, io, data) {
 
         // Unipile üzerinden AI yanıtını gönder
         try {
-            // unipile_chat_id henüz DB'de yoksa parametre ile gelen değeri kullan
-            const chatIdToUse = customer.unipile_chat_id || unipile_chat_id;
-            if (chatIdToUse && !customer.unipile_chat_id) {
-                db.prepare('UPDATE customers SET unipile_chat_id = ? WHERE id = ?').run(chatIdToUse, customer.id);
+            // Her zaman polling'den gelen en güncel chatId'yi kullan
+            const chatIdToUse = unipile_chat_id || customer.unipile_chat_id;
+            if (unipile_chat_id && unipile_chat_id !== customer.unipile_chat_id) {
+                db.prepare('UPDATE customers SET unipile_chat_id = ? WHERE id = ?').run(unipile_chat_id, customer.id);
             }
             const integration = db.prepare(
                 "SELECT * FROM integration_settings WHERE company_id = ? AND platform = ? AND provider = 'unipile' AND is_active = 1"

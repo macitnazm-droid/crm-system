@@ -27,7 +27,7 @@ class AIService {
                 content: msg.content
             }));
 
-            const system = `${systemPrompt}\n\nMüşteri Bilgileri:\n- İsim: ${customerInfo.name || 'Bilinmiyor'}\n- Kaynak: ${customerInfo.source || 'Bilinmiyor'}\n- Kategori: ${customerInfo.category || 'Belirlenmemiş'}`;
+            const system = `${systemPrompt}\n\nMüşteri Bilgileri:\n- İsim: ${customerInfo.name || 'Bilinmiyor'}\n- Kaynak: ${customerInfo.source || 'Bilinmiyor'}\n- Kategori: ${customerInfo.category || 'Belirlenmemiş'}\n\nÖNEMLİ: Yanıtlarında kesinlikle markdown formatı kullanma (**, *, #, -, > gibi). Düz metin kullan. Instagram ve WhatsApp'ta markdown görünmez.`;
 
             const response = await this.claude.messages.create({
                 model: 'claude-sonnet-4-6',
