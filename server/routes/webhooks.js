@@ -316,26 +316,27 @@ router.post('/unipile/:companyId', async (req, res) => {
         let senderId, senderName, messageText, provider, chatId;
 
         if (body.event && body.chat_id) {
-            // Format 3 (Gerçek Unipile): { event, account_type, chat_id, attendees, message }
-            const attendee = body.attendees?.[0];
-            senderId = attendee?.attendee_provider_id || attendee?.attendee_id;
-            senderName = attendee?.attendee_name;
+            // Format 3 (Gerçek Unipile): { event, account_type, chat_id, attendees, message, sender }
+            // sender = mesajı gönderen kişi, attendees = konuşmadaki diğer taraf(lar)
+            const sender = body.sender;
+            senderId = sender?.attendee_provider_id || sender?.attendee_id
+                || body.attendees?.[0]?.attendee_provider_id || body.attendees?.[0]?.attendee_id;
+            senderName = sender?.attendee_name
+                || body.attendees?.[0]?.attendee_name;
 
-            // message field'ını detaylı logla
-            console.log('📦 body.message:', JSON.stringify(body.message));
-            console.log('📦 body.sender:', JSON.stringify(body.sender));
+            // message field string veya obje olabilir
+            messageText = typeof body.message === 'string'
+                ? body.message
+                : (body.message?.text || body.message?.body || body.message?.content);
+            // Fallback'ler
+            if (!messageText) messageText = body.text || body.content;
 
-            messageText = body.message?.text || body.message?.body || body.message?.content
-                || body.message?.message || body.message?.message_text
-                || body.text || body.content || body.message_text;
             provider = (body.account_type || '').toUpperCase();
             chatId = body.chat_id;
 
             // Kendi gönderdiğimiz mesajları işleme (sonsuz döngü önleme)
-            const mySenderId = body.account_info?.user_id;
-            const senderProviderId = body.sender?.attendee_provider_id || body.sender?.attendee_id;
-            if (body.message?.is_sender === true || body.message?.sender === 'me'
-                || (mySenderId && senderProviderId === mySenderId)) {
+            // is_sender root seviyede geliyor
+            if (body.is_sender === true) {
                 console.log('⏭ Kendi mesajımız, atlanıyor');
                 return res.status(200).json({ status: 'ok', note: 'own message' });
             }
