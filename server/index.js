@@ -66,9 +66,21 @@ app.use('/api/integrations', require('./routes/integrations'));
 app.use('/api/superadmin', require('./routes/superadmin'));
 app.use('/api/appointments', require('./routes/appointments'));
 
-// Unipile polling (webhook yerine)
-const { startPolling } = require('./services/unipilePoller');
-startPolling(db, io);
+// Unipile polling — webhook aktifken devre dışı
+// const { startPolling } = require('./services/unipilePoller');
+// startPolling(db, io);
+
+// Render free tier uyanık tut (her 4 dakikada self-ping)
+if (process.env.NODE_ENV === 'production') {
+  const keepAliveUrl = process.env.FRONTEND_URL || 'https://crm-system-y92c.onrender.com';
+  setInterval(async () => {
+    try {
+      const fetch = (await import('node-fetch')).default;
+      await fetch(`${keepAliveUrl}/api/health`);
+    } catch (e) {}
+  }, 4 * 60 * 1000);
+  console.log('⏰ Keep-alive ping aktif (her 4 dakika)');
+}
 
 // Health check
 app.get('/api/health', (req, res) => {
