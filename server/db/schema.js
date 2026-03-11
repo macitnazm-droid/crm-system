@@ -180,6 +180,8 @@ function initDB() {
       page_id TEXT DEFAULT '',
       verify_token TEXT DEFAULT '',
       is_active INTEGER DEFAULT 0,
+      provider TEXT DEFAULT 'meta',
+      dsn_url TEXT DEFAULT '',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
