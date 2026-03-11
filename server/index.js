@@ -83,9 +83,46 @@ if (process.env.NODE_ENV === 'production') {
   console.log('⏰ Keep-alive ping aktif (her 4 dakika)');
 }
 
+// In-memory log buffer (son 200 log satırı)
+const logBuffer = [];
+const MAX_LOGS = 200;
+const origLog = console.log;
+const origWarn = console.warn;
+const origError = console.error;
+
+function captureLog(level, args) {
+  const line = `[${new Date().toISOString()}] [${level}] ${args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ')}`;
+  logBuffer.push(line);
+  if (logBuffer.length > MAX_LOGS) logBuffer.shift();
+}
+console.log = (...args) => { captureLog('LOG', args); origLog.apply(console, args); };
+console.warn = (...args) => { captureLog('WARN', args); origWarn.apply(console, args); };
+console.error = (...args) => { captureLog('ERR', args); origError.apply(console, args); };
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Debug logs endpoint (geçici)
+app.get('/api/debug/logs', (req, res) => {
+  const filter = req.query.filter || '';
+  const lines = filter
+    ? logBuffer.filter(l => l.toLowerCase().includes(filter.toLowerCase()))
+    : logBuffer;
+  res.type('text/plain').send(lines.join('\n') || 'No logs yet');
+});
+
+// Debug: integration_settings tablosunu göster
+app.get('/api/debug/integrations', (req, res) => {
+  try {
+    const all = db.prepare('SELECT id, company_id, platform, provider, is_active, dsn_url, api_key FROM integration_settings').all();
+    // API key'leri maskele
+    const masked = all.map(r => ({ ...r, api_key: r.api_key ? r.api_key.substring(0, 8) + '...' : null }));
+    res.json(masked);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Production: React build'i sun
