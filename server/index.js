@@ -19,6 +19,7 @@ const io = new Server(server, {
 });
 
 // Middleware
+app.set('trust proxy', 1); // Render load balancer arkasında
 app.use(helmet()); // Güvenli HTTP başlıkları
 app.use(cors({
   origin: process.env.NODE_ENV === 'production'

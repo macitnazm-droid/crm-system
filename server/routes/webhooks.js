@@ -309,28 +309,34 @@ router.post('/unipile/:companyId', async (req, res) => {
 
         const body = req.body;
 
-        // Unipile farklı event formatları gönderebilir
-        // Format 1: { event, account_id, data: { from_id, from_name, text, provider } }
-        // Format 2: { type, account_id, payload: { sender, text, provider } }
+        // Unipile webhook formatları
         let senderId, senderName, messageText, provider, chatId;
 
-        if (body.event && body.data) {
+        if (body.event && body.chat_id) {
+            // Format 3 (Gerçek Unipile): { event, account_type, chat_id, attendees, message }
+            const attendee = body.attendees?.[0];
+            senderId = attendee?.attendee_provider_id || attendee?.attendee_id;
+            senderName = attendee?.attendee_name;
+            messageText = body.message?.text || body.message?.body || body.text || body.content;
+            provider = (body.account_type || '').toUpperCase();
+            chatId = body.chat_id;
+        } else if (body.event && body.data) {
             // Format 1
             senderId = body.data.from_id || body.data.sender_id || body.data.attendee_id;
             senderName = body.data.from_name || body.data.sender_name || body.data.attendee_name;
             messageText = body.data.text || body.data.body || body.data.message;
             provider = (body.data.provider || body.account_type || '').toUpperCase();
-            chatId = body.data.chat_id || body.data.conversation_id || body.data.thread_id;
+            chatId = body.data.chat_id || body.data.conversation_id;
         } else if (body.type && body.payload) {
             // Format 2
             senderId = body.payload.sender?.id || body.payload.from_id;
             senderName = body.payload.sender?.name || body.payload.from_name;
             messageText = body.payload.text || body.payload.body;
             provider = (body.payload.provider || body.account_type || '').toUpperCase();
-            chatId = body.payload.chat_id || body.payload.conversation_id || body.payload.thread_id;
+            chatId = body.payload.chat_id || body.payload.conversation_id;
         } else {
             // Bilinmeyen format — logla ve 200 dön
-            console.warn('Unipile bilinmeyen webhook formatı:', JSON.stringify(body).substring(0, 500));
+            console.warn('Unipile bilinmeyen webhook formatı:', JSON.stringify(body).substring(0, 300));
             return res.status(200).json({ status: 'ok', note: 'unknown format' });
         }
 
