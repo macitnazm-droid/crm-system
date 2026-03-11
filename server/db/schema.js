@@ -2,7 +2,10 @@ const Database = require('better-sqlite3');
 const path = require('path');
 
 function initDB() {
-  const db = new Database(path.join(__dirname, '..', 'crm.db'));
+  const dbPath = process.env.NODE_ENV === 'production'
+    ? '/var/data/crm.db'
+    : path.join(__dirname, '..', 'crm.db');
+  const db = new Database(dbPath);
 
   // WAL modu — daha iyi performans
   db.pragma('journal_mode = WAL');
