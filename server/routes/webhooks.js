@@ -214,6 +214,31 @@ async function processIncomingMessage(db, io, data) {
         // Real-time: AI yanıtı bildirimi
         io.to(`company:${company_id}`).emit('message:new', { message: aiMessage, conversation_id: conversation.id });
 
+        // Unipile üzerinden AI yanıtını gönder
+        try {
+            const integration = db.prepare(
+                "SELECT * FROM integration_settings WHERE company_id = ? AND platform = ? AND provider = 'unipile' AND is_active = 1"
+            ).get(company_id, source);
+            if (integration && customer.unipile_chat_id) {
+                const fetch = (await import('node-fetch')).default;
+                const dsn = integration.dsn_url.startsWith('http')
+                    ? integration.dsn_url.replace(/\/$/, '')
+                    : `https://${integration.dsn_url.replace(/\/$/, '')}`;
+                const sendRes = await fetch(`${dsn}/api/v1/chats/${customer.unipile_chat_id}/messages`, {
+                    method: 'POST',
+                    headers: { 'X-API-KEY': integration.api_key, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: aiResponse.content })
+                });
+                if (sendRes.ok) {
+                    console.log(`🤖 AI yanıtı Unipile'a gönderildi: "${aiResponse.content.substring(0, 50)}"`);
+                } else {
+                    console.warn(`Unipile AI outbound hatası: ${sendRes.status}`);
+                }
+            }
+        } catch (unipileErr) {
+            console.error('Unipile AI outbound hatası:', unipileErr.message);
+        }
+
         // 5. Müşteriyi kategorize et
         const allMessages = db.prepare('SELECT * FROM messages WHERE customer_id = ? AND company_id = ? ORDER BY created_at ASC').all(customer.id, company_id);
         const categorization = await aiService.categorizeCustomer(allMessages, customer);
