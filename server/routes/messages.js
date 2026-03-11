@@ -31,7 +31,7 @@ router.get('/', authMiddleware, (req, res) => {
 });
 
 // POST /api/messages/send — Agent manual mesaj gönderme
-router.post('/send', authMiddleware, (req, res) => {
+router.post('/send', authMiddleware, async (req, res) => {
     try {
         const db = req.app.locals.db;
         const io = req.app.locals.io;
