@@ -64,6 +64,7 @@ app.use('/api/reports', require('./routes/reports'));
 app.use('/api/webhooks', require('./routes/webhooks'));
 app.use('/api/integrations', require('./routes/integrations'));
 app.use('/api/superadmin', require('./routes/superadmin'));
+app.use('/api/appointments', require('./routes/appointments'));
 
 // Unipile polling (webhook yerine)
 const { startPolling } = require('./services/unipilePoller');

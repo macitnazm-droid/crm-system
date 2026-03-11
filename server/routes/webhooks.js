@@ -253,6 +253,30 @@ async function processIncomingMessage(db, io, data) {
 
         customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(customer.id);
         io.to(`company:${company_id}`).emit('customer:categorized', { customer });
+
+        // Randevu tespiti (sadece hot müşteriler)
+        if (categorization.category === 'hot') {
+            try {
+                const existing = db.prepare('SELECT id FROM appointments WHERE conversation_id = ? AND company_id = ?').get(conversation.id, company_id);
+                if (!existing) {
+                    const appointment = await aiService.extractAppointment(allMessages, customer);
+                    if (appointment) {
+                        db.prepare(`
+                            INSERT INTO appointments (company_id, customer_id, conversation_id, customer_name, phone, appointment_time, notes)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                        `).run(company_id, customer.id, conversation.id,
+                            appointment.customer_name || customer.name,
+                            appointment.phone || customer.phone,
+                            appointment.appointment_time,
+                            appointment.notes || null);
+                        console.log(`📅 Randevu tespit edildi: ${appointment.customer_name} - ${appointment.appointment_time}`);
+                        io.to(`company:${company_id}`).emit('appointment:new', { appointment });
+                    }
+                }
+            } catch (apptErr) {
+                console.error('Randevu tespiti hatası:', apptErr.message);
+            }
+        }
     }
 
     return {

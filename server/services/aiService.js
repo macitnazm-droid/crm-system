@@ -166,6 +166,35 @@ class AIService {
 
         return { category, lead_score: score, reasoning };
     }
+
+    async extractAppointment(messages, customerInfo) {
+        if (this.provider !== 'claude') return null;
+        try {
+            const allText = messages.map(m =>
+                `${m.direction === 'inbound' ? 'Müşteri' : 'Asistan'}: ${m.content}`
+            ).join('\n');
+
+            const response = await this.claude.messages.create({
+                model: 'claude-sonnet-4-6',
+                max_tokens: 300,
+                system: 'Konuşmadan randevu bilgilerini çıkar. Yanıt sadece JSON olsun.',
+                messages: [{
+                    role: 'user',
+                    content: `Konuşma:\n${allText}\n\nRandevu bilgisi var mı? Format:\n{"has_appointment": true/false, "customer_name": "...", "phone": "...", "appointment_time": "...", "notes": "..."}\nRandevu yoksa: {"has_appointment": false}`
+                }]
+            });
+
+            const text = response.content[0].text;
+            const jsonMatch = text.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                const parsed = JSON.parse(jsonMatch[0]);
+                return parsed.has_appointment ? parsed : null;
+            }
+        } catch (err) {
+            console.error('Randevu çıkarma hatası:', err.message);
+        }
+        return null;
+    }
 }
 
 // Singleton

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { reportsAPI } from '../lib/api';
-import { BarChart3, TrendingUp, Users, Bot, UserCheck, Percent } from 'lucide-react';
+import { reportsAPI, appointmentsAPI } from '../lib/api';
+import { BarChart3, TrendingUp, Users, Bot, UserCheck, Percent, Calendar, CheckCircle, XCircle, Clock } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 
 export default function ReportsPage() {
@@ -8,24 +8,34 @@ export default function ReportsPage() {
     const [categories, setCategories] = useState(null);
     const [agents, setAgents] = useState([]);
     const [sources, setSources] = useState([]);
+    const [appointments, setAppointments] = useState([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => { loadData(); }, []);
 
     const loadData = async () => {
         try {
-            const [sRes, cRes, aRes, srRes] = await Promise.all([
+            const [sRes, cRes, aRes, srRes, apptRes] = await Promise.all([
                 reportsAPI.today(),
                 reportsAPI.categories(),
                 reportsAPI.agents(),
                 reportsAPI.sources(),
+                appointmentsAPI.list(),
             ]);
             setStats(sRes.data);
             setCategories(cRes.data);
             setAgents(aRes.data.agents || []);
             setSources(srRes.data.sources || []);
+            setAppointments(apptRes.data.appointments || []);
         } catch (err) { console.error(err); }
         finally { setLoading(false); }
+    };
+
+    const updateAppointmentStatus = async (id, status) => {
+        try {
+            await appointmentsAPI.updateStatus(id, status);
+            setAppointments(prev => prev.map(a => a.id === id ? { ...a, status } : a));
+        } catch (err) { console.error(err); }
     };
 
     if (loading) return <div className="loading-center"><div className="loading-spinner" /></div>;
@@ -184,6 +194,70 @@ export default function ReportsPage() {
                         </>
                     ) : <div className="empty-state"><p>Veri yok</p></div>}
                 </div>
+            </div>
+
+            {/* Randevular */}
+            <div className="glass-card" style={{ padding: 0, overflow: 'hidden', marginTop: 20 }}>
+                <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <Calendar size={18} style={{ color: 'var(--accent-primary)' }} />
+                    <h3 style={{ fontSize: 15, fontWeight: 600 }}>AI Tespit Edilen Randevular</h3>
+                    <span style={{ marginLeft: 'auto', fontSize: 13, color: 'var(--text-secondary)' }}>{appointments.length} randevu</span>
+                </div>
+                {appointments.length === 0 ? (
+                    <div className="empty-state" style={{ padding: 40 }}>
+                        <Calendar size={32} />
+                        <p>Henüz randevu tespit edilmedi</p>
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Hot müşterilerin konuşmalarından otomatik tespit edilir</span>
+                    </div>
+                ) : (
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead>
+                            <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                {['Müşteri', 'Telefon', 'Randevu Zamanı', 'Notlar', 'Durum', 'İşlem'].map(h => (
+                                    <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>{h}</th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {appointments.map(a => (
+                                <tr key={a.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                    <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 500 }}>{a.customer_name || a.customer_db_name || '-'}</td>
+                                    <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--text-secondary)' }}>{a.phone || a.customer_db_phone || '-'}</td>
+                                    <td style={{ padding: '12px 16px', fontSize: 13 }}>{a.appointment_time || '-'}</td>
+                                    <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--text-secondary)', maxWidth: 200 }}>{a.notes || '-'}</td>
+                                    <td style={{ padding: '12px 16px' }}>
+                                        <span style={{
+                                            fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 20,
+                                            background: a.status === 'confirmed' ? 'rgba(16,185,129,0.15)' : a.status === 'cancelled' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)',
+                                            color: a.status === 'confirmed' ? '#10b981' : a.status === 'cancelled' ? '#ef4444' : '#f59e0b'
+                                        }}>
+                                            {a.status === 'confirmed' ? 'Onaylandı' : a.status === 'cancelled' ? 'İptal' : 'Bekliyor'}
+                                        </span>
+                                    </td>
+                                    <td style={{ padding: '12px 16px' }}>
+                                        <div style={{ display: 'flex', gap: 6 }}>
+                                            {a.status !== 'confirmed' && (
+                                                <button className="btn btn-sm btn-ghost" onClick={() => updateAppointmentStatus(a.id, 'confirmed')} title="Onayla" style={{ color: '#10b981' }}>
+                                                    <CheckCircle size={14} />
+                                                </button>
+                                            )}
+                                            {a.status !== 'cancelled' && (
+                                                <button className="btn btn-sm btn-ghost" onClick={() => updateAppointmentStatus(a.id, 'cancelled')} title="İptal" style={{ color: '#ef4444' }}>
+                                                    <XCircle size={14} />
+                                                </button>
+                                            )}
+                                            {a.status !== 'pending' && (
+                                                <button className="btn btn-sm btn-ghost" onClick={() => updateAppointmentStatus(a.id, 'pending')} title="Bekleyene al" style={{ color: '#f59e0b' }}>
+                                                    <Clock size={14} />
+                                                </button>
+                                            )}
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                )}
             </div>
         </div>
     );

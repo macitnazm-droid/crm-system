@@ -195,6 +195,19 @@ function initDB() {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS appointments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      company_id INTEGER REFERENCES companies(id),
+      customer_id INTEGER REFERENCES customers(id),
+      conversation_id INTEGER REFERENCES conversations(id),
+      customer_name TEXT,
+      phone TEXT,
+      appointment_time TEXT,
+      notes TEXT,
+      status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'confirmed', 'cancelled')),
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE INDEX IF NOT EXISTS idx_users_company ON users(company_id);
     CREATE INDEX IF NOT EXISTS idx_customers_company ON customers(company_id);
     CREATE INDEX IF NOT EXISTS idx_conversations_company ON conversations(company_id);

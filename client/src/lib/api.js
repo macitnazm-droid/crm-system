@@ -93,6 +93,12 @@ export const integrationsAPI = {
     test: (platform) => api.post('/integrations/test', { platform }),
 };
 
+// Appointments
+export const appointmentsAPI = {
+    list: () => api.get('/appointments'),
+    updateStatus: (id, status) => api.patch(`/appointments/${id}/status`, { status }),
+};
+
 // Super Admin
 export const superAdminAPI = {
     listCompanies: () => api.get('/superadmin/companies'),
