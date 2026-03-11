@@ -131,7 +131,7 @@ router.post('/simulate', async (req, res) => {
 
 // Gelen mesajı işle
 async function processIncomingMessage(db, io, data) {
-    const { company_id, platform_id, content, source, customer_name, phone, instagram_id } = data;
+    const { company_id, platform_id, content, source, customer_name, phone, instagram_id, unipile_chat_id } = data;
     const now = new Date().toISOString();
 
     // 1. Müşteriyi bul veya oluştur
@@ -216,15 +216,20 @@ async function processIncomingMessage(db, io, data) {
 
         // Unipile üzerinden AI yanıtını gönder
         try {
+            // unipile_chat_id henüz DB'de yoksa parametre ile gelen değeri kullan
+            const chatIdToUse = customer.unipile_chat_id || unipile_chat_id;
+            if (chatIdToUse && !customer.unipile_chat_id) {
+                db.prepare('UPDATE customers SET unipile_chat_id = ? WHERE id = ?').run(chatIdToUse, customer.id);
+            }
             const integration = db.prepare(
                 "SELECT * FROM integration_settings WHERE company_id = ? AND platform = ? AND provider = 'unipile' AND is_active = 1"
             ).get(company_id, source);
-            if (integration && customer.unipile_chat_id) {
+            if (integration && chatIdToUse) {
                 const fetch = (await import('node-fetch')).default;
                 const dsn = integration.dsn_url.startsWith('http')
                     ? integration.dsn_url.replace(/\/$/, '')
                     : `https://${integration.dsn_url.replace(/\/$/, '')}`;
-                const sendRes = await fetch(`${dsn}/api/v1/chats/${customer.unipile_chat_id}/messages`, {
+                const sendRes = await fetch(`${dsn}/api/v1/chats/${chatIdToUse}/messages`, {
                     method: 'POST',
                     headers: { 'X-API-KEY': integration.api_key, 'Content-Type': 'application/json' },
                     body: JSON.stringify({ text: aiResponse.content })

@@ -111,6 +111,7 @@ async function pollIntegration(db, io, integration) {
                 content: text,
                 source,
                 customer_name: senderName,
+                unipile_chat_id: chatId,
             });
 
             // chat_id'yi müşteri kaydına sakla (outbound için)
