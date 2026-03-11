@@ -309,8 +309,8 @@ router.post('/unipile/:companyId', async (req, res) => {
 
         const body = req.body;
 
-        // Her webhook'u tam logla (ilk 800 karakter)
-        console.log('🔔 Unipile webhook body:', JSON.stringify(body).substring(0, 800));
+        // Her webhook'u tam logla
+        console.log('🔔 Unipile webhook body:', JSON.stringify(body).substring(0, 2000));
 
         // Unipile webhook formatları
         let senderId, senderName, messageText, provider, chatId;
@@ -320,13 +320,22 @@ router.post('/unipile/:companyId', async (req, res) => {
             const attendee = body.attendees?.[0];
             senderId = attendee?.attendee_provider_id || attendee?.attendee_id;
             senderName = attendee?.attendee_name;
+
+            // message field'ını detaylı logla
+            console.log('📦 body.message:', JSON.stringify(body.message));
+            console.log('📦 body.sender:', JSON.stringify(body.sender));
+
             messageText = body.message?.text || body.message?.body || body.message?.content
+                || body.message?.message || body.message?.message_text
                 || body.text || body.content || body.message_text;
             provider = (body.account_type || '').toUpperCase();
             chatId = body.chat_id;
 
             // Kendi gönderdiğimiz mesajları işleme (sonsuz döngü önleme)
-            if (body.message?.is_sender === true || body.message?.sender === 'me') {
+            const mySenderId = body.account_info?.user_id;
+            const senderProviderId = body.sender?.attendee_provider_id || body.sender?.attendee_id;
+            if (body.message?.is_sender === true || body.message?.sender === 'me'
+                || (mySenderId && senderProviderId === mySenderId)) {
                 console.log('⏭ Kendi mesajımız, atlanıyor');
                 return res.status(200).json({ status: 'ok', note: 'own message' });
             }
