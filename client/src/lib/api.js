@@ -100,6 +100,11 @@ export const integrationsAPI = {
     unipileAccounts: () => api.get('/integrations/unipile-accounts'),
     unipileConnect: (providerType) => api.post('/integrations/unipile-connect', { provider_type: providerType }),
     unipileReconnect: (accountId) => api.post('/integrations/unipile-reconnect', { account_id: accountId }),
+    // WhatsApp Web.js
+    waWebConnect: () => api.post('/integrations/whatsapp-web/connect'),
+    waWebQR: () => api.get('/integrations/whatsapp-web/qr'),
+    waWebStatus: () => api.get('/integrations/whatsapp-web/status'),
+    waWebDisconnect: () => api.post('/integrations/whatsapp-web/disconnect'),
 };
 
 // Appointments

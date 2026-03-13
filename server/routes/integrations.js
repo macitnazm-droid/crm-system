@@ -302,4 +302,52 @@ router.post('/unipile-reconnect', authMiddleware, adminOnly, async (req, res) =>
     }
 });
 
+// ==================== WhatsApp Web.js Routes ====================
+
+// POST /api/integrations/whatsapp-web/connect — QR kod ile WhatsApp bağla
+router.post('/whatsapp-web/connect', authMiddleware, adminOnly, async (req, res) => {
+    try {
+        const db = req.app.locals.db;
+        const io = req.app.locals.io;
+        const companyId = req.user.company_id;
+
+        const { initClient } = require('../services/whatsappWebService');
+        const result = await initClient(db, io, companyId);
+        res.json(result);
+    } catch (err) {
+        console.error('WhatsApp Web connect error:', err);
+        res.status(500).json({ error: 'WhatsApp bağlantısı başlatılamadı: ' + err.message });
+    }
+});
+
+// GET /api/integrations/whatsapp-web/qr — Güncel QR kodu getir
+router.get('/whatsapp-web/qr', authMiddleware, (req, res) => {
+    const companyId = req.user.company_id;
+    const { getQR } = require('../services/whatsappWebService');
+    const qr = getQR(companyId);
+    res.json({ qr });
+});
+
+// GET /api/integrations/whatsapp-web/status — Bağlantı durumu
+router.get('/whatsapp-web/status', authMiddleware, (req, res) => {
+    const companyId = req.user.company_id;
+    const { getStatus } = require('../services/whatsappWebService');
+    const status = getStatus(companyId);
+    res.json(status);
+});
+
+// POST /api/integrations/whatsapp-web/disconnect — Bağlantıyı kes
+router.post('/whatsapp-web/disconnect', authMiddleware, adminOnly, async (req, res) => {
+    try {
+        const db = req.app.locals.db;
+        const companyId = req.user.company_id;
+        const { disconnectClient } = require('../services/whatsappWebService');
+        const result = await disconnectClient(db, companyId);
+        res.json(result);
+    } catch (err) {
+        console.error('WhatsApp Web disconnect error:', err);
+        res.status(500).json({ error: 'Bağlantı kesilirken hata: ' + err.message });
+    }
+});
+
 module.exports = router;

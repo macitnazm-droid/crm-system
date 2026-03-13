@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import {
     Settings, Bot, Save, Plus, Eye, EyeOff, AlertCircle,
     Instagram, MessageCircle, Link2, CheckCircle, X, Loader,
-    Webhook, Globe, Key, Phone, Shield, Trash2
+    Webhook, Globe, Key, Phone, Shield, Trash2, QrCode, Wifi, WifiOff, Smartphone
 } from 'lucide-react';
 
 export default function SettingsPage() {
@@ -28,7 +28,16 @@ export default function SettingsPage() {
     const [igProvider, setIgProvider] = useState('meta');
     const [waProvider, setWaProvider] = useState('meta');
 
-    useEffect(() => { loadData(); }, []);
+    // WhatsApp Web.js state
+    const [waWebStatus, setWaWebStatus] = useState({ status: 'disconnected', phone: null, name: null });
+    const [waWebQR, setWaWebQR] = useState(null);
+    const [waWebLoading, setWaWebLoading] = useState(false);
+
+    useEffect(() => {
+        loadData();
+        // WhatsApp Web durumunu yükle
+        integrationsAPI.waWebStatus().then(res => setWaWebStatus(res.data)).catch(() => {});
+    }, []);
 
     const loadData = async () => {
         try {
@@ -358,13 +367,16 @@ export default function SettingsPage() {
                                 </div>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                {waWebStatus.status === 'connected' && (
+                                    <span className="badge" style={{ fontSize: 10, background: 'rgba(37,211,102,0.12)', color: '#25D366', border: '1px solid rgba(37,211,102,0.3)' }}>WA Web</span>
+                                )}
                                 {waMetaForm.is_active && (
                                     <span className="badge" style={{ fontSize: 10, background: 'rgba(59,130,246,0.12)', color: '#3b82f6', border: '1px solid rgba(59,130,246,0.3)' }}>Meta</span>
                                 )}
                                 {waUnipileForm.is_active && (
                                     <span className="badge" style={{ fontSize: 10, background: 'rgba(139,92,246,0.12)', color: '#8b5cf6', border: '1px solid rgba(139,92,246,0.3)' }}>Unipile</span>
                                 )}
-                                {!waMetaForm.is_active && !waUnipileForm.is_active && (
+                                {!waMetaForm.is_active && !waUnipileForm.is_active && waWebStatus.status !== 'connected' && (
                                     <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Pasif</span>
                                 )}
                             </div>
@@ -372,17 +384,18 @@ export default function SettingsPage() {
                         <div style={{ padding: 20 }}>
                             {/* Provider Seçici Tab */}
                             <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
-                                {['meta', 'unipile'].map(p => (
+                                {['whatsapp-web', 'meta', 'unipile'].map(p => (
                                     <button key={p}
                                         className={`btn btn-sm ${waProvider === p ? 'btn-primary' : 'btn-ghost'}`}
                                         onClick={() => setWaProvider(p)}
                                         style={{ textTransform: 'capitalize', minWidth: 90 }}>
-                                        {p === 'meta' ? 'Meta (Resmi)' : 'Unipile'}
+                                        {p === 'meta' ? 'Meta (Resmi)' : p === 'unipile' ? 'Unipile' : 'WA Web (QR)'}
                                     </button>
                                 ))}
                             </div>
 
-                            {/* Per-provider aktif/pasif toggle */}
+                            {/* Per-provider aktif/pasif toggle (whatsapp-web hariç — o otomatik) */}
+                            {waProvider !== 'whatsapp-web' && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
                                 <span style={{ fontSize: 12, color: (waProvider === 'meta' ? waMetaForm.is_active : waUnipileForm.is_active) ? 'var(--success)' : 'var(--text-muted)' }}>
                                     {waProvider === 'meta' ? 'Meta' : 'Unipile'}: {(waProvider === 'meta' ? waMetaForm.is_active : waUnipileForm.is_active) ? 'Aktif' : 'Pasif'}
@@ -392,8 +405,126 @@ export default function SettingsPage() {
                                         ? setWaMetaForm(prev => ({ ...prev, is_active: !prev.is_active }))
                                         : setWaUnipileForm(prev => ({ ...prev, is_active: !prev.is_active }))} />
                             </div>
+                            )}
 
-                            {waProvider === 'meta' ? (
+                            {waProvider === 'whatsapp-web' ? (
+                                <div style={{ padding: '16px', borderRadius: 'var(--radius-md)', background: 'rgba(37,211,102,0.06)', border: '1px solid rgba(37,211,102,0.2)' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                                        <Smartphone size={20} style={{ color: '#25D366' }} />
+                                        <div>
+                                            <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
+                                                WhatsApp Web Bağlantısı (Ücretsiz)
+                                            </p>
+                                            <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                                QR kod okutarak kişisel veya iş WhatsApp numaranızı bağlayın. Meta veya Unipile hesabı gerekmez.
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    {/* Durum Göstergesi */}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, padding: '10px 14px', borderRadius: 'var(--radius-md)',
+                                        background: waWebStatus.status === 'connected' ? 'rgba(34,197,94,0.1)' : waWebStatus.status === 'qr_ready' ? 'rgba(234,179,8,0.1)' : 'rgba(239,68,68,0.1)',
+                                        border: `1px solid ${waWebStatus.status === 'connected' ? 'rgba(34,197,94,0.3)' : waWebStatus.status === 'qr_ready' ? 'rgba(234,179,8,0.3)' : 'rgba(239,68,68,0.3)'}` }}>
+                                        {waWebStatus.status === 'connected' ? <Wifi size={16} style={{ color: '#22c55e' }} /> :
+                                         waWebStatus.status === 'qr_ready' || waWebStatus.status === 'initializing' ? <Loader size={16} className="spinning" style={{ color: '#eab308' }} /> :
+                                         <WifiOff size={16} style={{ color: '#ef4444' }} />}
+                                        <div>
+                                            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                                                {waWebStatus.status === 'connected' ? 'Bağlı' :
+                                                 waWebStatus.status === 'qr_ready' ? 'QR Kod Hazır — Telefondan Okutun' :
+                                                 waWebStatus.status === 'initializing' ? 'Başlatılıyor...' :
+                                                 waWebStatus.status === 'auth_failed' ? 'Kimlik Doğrulama Hatası' :
+                                                 'Bağlı Değil'}
+                                            </span>
+                                            {waWebStatus.phone && (
+                                                <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 8 }}>
+                                                    {waWebStatus.name && `${waWebStatus.name} — `}+{waWebStatus.phone}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* QR Kod */}
+                                    {waWebQR && waWebStatus.status !== 'connected' && (
+                                        <div style={{ textAlign: 'center', marginBottom: 16 }}>
+                                            <img src={waWebQR} alt="WhatsApp QR" style={{ width: 280, height: 280, borderRadius: 'var(--radius-md)', border: '2px solid var(--border-color)' }} />
+                                            <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
+                                                WhatsApp &gt; Bağlı Cihazlar &gt; Cihaz Bağla ile okutun
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {/* Butonlar */}
+                                    <div style={{ display: 'flex', gap: 8 }}>
+                                        {waWebStatus.status !== 'connected' ? (
+                                            <button className="btn btn-sm" disabled={waWebLoading}
+                                                style={{ background: '#25D366', color: '#fff', border: 'none' }}
+                                                onClick={async () => {
+                                                    setWaWebLoading(true);
+                                                    setWaWebQR(null);
+                                                    try {
+                                                        await integrationsAPI.waWebConnect();
+                                                        setTestResult({ success: true, message: 'WhatsApp başlatılıyor, QR kod bekleniyor...' });
+                                                        // QR kodu poll et
+                                                        const pollQR = setInterval(async () => {
+                                                            try {
+                                                                const qrRes = await integrationsAPI.waWebQR();
+                                                                if (qrRes.data.qr) {
+                                                                    setWaWebQR(qrRes.data.qr);
+                                                                    setWaWebStatus(prev => ({ ...prev, status: 'qr_ready' }));
+                                                                }
+                                                                const stRes = await integrationsAPI.waWebStatus();
+                                                                setWaWebStatus(stRes.data);
+                                                                if (stRes.data.status === 'connected') {
+                                                                    clearInterval(pollQR);
+                                                                    setWaWebQR(null);
+                                                                    setWaWebLoading(false);
+                                                                    setTestResult({ success: true, message: 'WhatsApp başarıyla bağlandı!' });
+                                                                }
+                                                            } catch (e) { }
+                                                        }, 3000);
+                                                        // 2 dakika sonra polling'i durdur
+                                                        setTimeout(() => { clearInterval(pollQR); setWaWebLoading(false); }, 120000);
+                                                    } catch (err) {
+                                                        setTestResult({ success: false, message: 'Bağlantı hatası: ' + (err.response?.data?.error || err.message) });
+                                                        setWaWebLoading(false);
+                                                    }
+                                                }}>
+                                                {waWebLoading ? <Loader size={14} className="spinning" /> : <QrCode size={14} />}
+                                                {' '}QR Kod ile Bağlan
+                                            </button>
+                                        ) : (
+                                            <button className="btn btn-sm" disabled={waWebLoading}
+                                                style={{ background: '#ef4444', color: '#fff', border: 'none' }}
+                                                onClick={async () => {
+                                                    if (!window.confirm('WhatsApp bağlantısını kesmek istediğinize emin misiniz?')) return;
+                                                    setWaWebLoading(true);
+                                                    try {
+                                                        await integrationsAPI.waWebDisconnect();
+                                                        setWaWebStatus({ status: 'disconnected', phone: null, name: null });
+                                                        setTestResult({ success: true, message: 'WhatsApp bağlantısı kesildi' });
+                                                    } catch (err) {
+                                                        setTestResult({ success: false, message: 'Bağlantı kesme hatası: ' + (err.response?.data?.error || err.message) });
+                                                    } finally { setWaWebLoading(false); }
+                                                }}>
+                                                <WifiOff size={14} /> Bağlantıyı Kes
+                                            </button>
+                                        )}
+                                        <button className="btn btn-secondary btn-sm" disabled={waWebLoading}
+                                            onClick={async () => {
+                                                try {
+                                                    const res = await integrationsAPI.waWebStatus();
+                                                    setWaWebStatus(res.data);
+                                                    setTestResult({ success: true, message: `Durum: ${res.data.status}${res.data.phone ? ` — +${res.data.phone}` : ''}` });
+                                                } catch (err) {
+                                                    setTestResult({ success: false, message: 'Durum sorgulanamadı' });
+                                                }
+                                            }}>
+                                            Durumu Kontrol Et
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : waProvider === 'meta' ? (
                                 <>
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
                                         <div>
@@ -511,6 +642,7 @@ export default function SettingsPage() {
                                 </>
                             )}
 
+                            {waProvider !== 'whatsapp-web' && (
                             <div style={{ display: 'flex', gap: 8 }}>
                                 <button className="btn btn-primary btn-sm" onClick={() => saveIntegration(waProvider === 'meta' ? waMetaForm : waUnipileForm)} disabled={saving}>
                                     {saving ? <Loader size={14} className="spinning" /> : <Save size={14} />} Kaydet
@@ -519,6 +651,7 @@ export default function SettingsPage() {
                                     Bağlantıyı Test Et
                                 </button>
                             </div>
+                            )}
                         </div>
                     </div>
 

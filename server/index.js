@@ -75,6 +75,10 @@ app.use('/api/appointments', require('./routes/appointments'));
 const { startPolling } = require('./services/unipilePoller');
 startPolling(db, io);
 
+// WhatsApp Web.js — mevcut oturumları otomatik yeniden bağla
+const { autoReconnect } = require('./services/whatsappWebService');
+autoReconnect(db, io);
+
 // Render free tier uyanık tut (her 4 dakikada self-ping)
 if (process.env.NODE_ENV === 'production') {
   const keepAliveUrl = process.env.FRONTEND_URL || 'https://crm-system-y92c.onrender.com';

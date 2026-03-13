@@ -100,13 +100,32 @@ async function verifyToken(accessToken) {
  * @param {object} options
  */
 async function sendOutboundMessage(db, { companyId, source, recipientId, recipientPhone, text }) {
-    const integration = db.prepare(
-        'SELECT * FROM integration_settings WHERE company_id = ? AND platform = ? AND is_active = 1'
-    ).get(companyId, source);
+    // Birden fazla provider olabilir — öncelik: whatsapp-web > unipile > meta
+    const integrations = db.prepare(
+        'SELECT * FROM integration_settings WHERE company_id = ? AND platform = ? AND is_active = 1 ORDER BY id DESC'
+    ).all(companyId, source);
 
-    if (!integration || !integration.api_key) {
+    const integration = integrations.find(i => i.provider === 'whatsapp-web')
+        || integrations.find(i => i.provider === 'unipile')
+        || integrations.find(i => i.provider === 'meta')
+        || null;
+
+    if (!integration) {
         console.warn(`Outbound mesaj gönderilemedi: ${source} entegrasyonu yok veya aktif değil`);
         return { sent: false, reason: 'no_integration' };
+    }
+
+    // WhatsApp Web.js provider
+    if (integration.provider === 'whatsapp-web') {
+        try {
+            const { sendMessage } = require('./whatsappWebService');
+            const phone = recipientPhone || recipientId;
+            if (!phone) return { sent: false, reason: 'missing_phone' };
+            return await sendMessage(companyId, phone, text);
+        } catch (err) {
+            console.error('WhatsApp Web outbound hatası:', err.message);
+            return { sent: false, reason: err.message };
+        }
     }
 
     if (integration.provider === 'meta') {
