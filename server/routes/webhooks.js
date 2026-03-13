@@ -598,18 +598,31 @@ async function processIncomingMessage(db, io, data) {
                 const endMin = h * 60 + m + dur;
                 const endTime = `${String(Math.floor(endMin / 60)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}`;
 
-                db.prepare(`
-                    INSERT INTO appointments (company_id, customer_id, conversation_id, customer_name, phone, staff_id, service_id, appointment_date, start_time, end_time, notes, status, source, appointment_time)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', 'ai', ?)
-                `).run(
-                    company_id, customer.id, conversation.id,
-                    customer.name || customer_name || '', customer.phone || phone || '',
-                    stf?.id || null, svc?.id || null,
-                    apptDate, apptTime, endTime,
-                    serviceName.trim(), `${apptDate} ${apptTime}`
-                );
+                // Çakışma kontrolü
+                const conflictQuery = stf?.id
+                    ? db.prepare(`SELECT id FROM appointments WHERE company_id = ? AND appointment_date = ? AND status NOT IN ('cancelled') AND staff_id = ? AND ((start_time < ? AND end_time > ?) OR (start_time < ? AND end_time > ?) OR (start_time >= ? AND end_time <= ?))`).get(company_id, apptDate, stf.id, endTime, apptTime, endTime, apptTime, apptTime, endTime)
+                    : db.prepare(`SELECT id FROM appointments WHERE company_id = ? AND appointment_date = ? AND status NOT IN ('cancelled') AND start_time = ?`).get(company_id, apptDate, apptTime);
 
-                console.log(`📅 AI randevu oluşturdu: ${customer.name} → ${apptDate} ${apptTime} (${serviceName.trim()})`);
+                if (conflictQuery) {
+                    console.log(`⚠️ AI randevu çakışması: ${apptDate} ${apptTime} zaten dolu, atlanıyor`);
+                    // Tag'ı temizle ama randevu oluşturma
+                    aiResponse.content = aiResponse.content.replace(/\s*\[RANDEVU:[^\]]+\]/, '').trim();
+                    aiResponse.content += '\n\nMaalesef bu saat dolu görünüyor, başka bir saat önerebilir miyim?';
+                } else {
+                    db.pragma('foreign_keys = OFF');
+                    db.prepare(`
+                        INSERT INTO appointments (company_id, customer_id, conversation_id, customer_name, phone, staff_id, service_id, appointment_date, start_time, end_time, notes, status, source, appointment_time)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', 'ai', ?)
+                    `).run(
+                        company_id, customer.id, conversation.id,
+                        customer.name || customer_name || '', customer.phone || phone || '',
+                        stf?.id || null, svc?.id || null,
+                        apptDate, apptTime, endTime,
+                        serviceName.trim(), `${apptDate} ${apptTime}`
+                    );
+                    db.pragma('foreign_keys = ON');
+
+                    console.log(`📅 AI randevu oluşturdu: ${customer.name} → ${apptDate} ${apptTime} (${serviceName.trim()})`);
 
                 // Randevu onay bildirimi gönder (WhatsApp/SMS)
                 sendAppointmentNotification(db, company_id, {
@@ -630,6 +643,7 @@ async function processIncomingMessage(db, io, data) {
 
                 // Real-time bildirim
                 io.to(`company:${company_id}`).emit('appointment:new', {});
+                }
             }
         } catch (apptErr) {
             console.error('AI randevu kayıt hatası:', apptErr.message);
