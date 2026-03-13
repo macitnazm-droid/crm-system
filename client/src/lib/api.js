@@ -135,6 +135,9 @@ export const appointmentsAPI = {
     // Çalışma Saatleri
     getWorkingHours: (params) => api.get('/appointments/working-hours', { params }),
     saveWorkingHours: (data) => api.post('/appointments/working-hours', data),
+    // Bildirim Ayarları
+    getNotificationSettings: () => api.get('/appointments/notification-settings'),
+    updateNotificationSettings: (data) => api.patch('/appointments/notification-settings', data),
 };
 
 // Super Admin

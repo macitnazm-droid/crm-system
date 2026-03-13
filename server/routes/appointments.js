@@ -1,6 +1,7 @@
 const express = require('express');
 const { authMiddleware, adminOnly } = require('../middleware/auth');
 const { detectAppointment } = require('./webhooks');
+const { sendAppointmentNotification } = require('../services/appointmentNotifyService');
 
 const router = express.Router();
 
@@ -109,6 +110,11 @@ router.post('/', authMiddleware, adminOnly, (req, res) => {
         // Real-time bildirim
         const io = req.app.locals.io;
         io.to(`company:${companyId}`).emit('appointment:new', { appointment });
+
+        // Randevu onay bildirimi gönder (WhatsApp/SMS)
+        sendAppointmentNotification(db, companyId, appointment, 'confirmation').catch(err => {
+            console.error('Randevu bildirim hatası:', err.message);
+        });
 
         res.json({ appointment });
     } catch (err) {
@@ -503,6 +509,58 @@ router.post('/scan', authMiddleware, (req, res) => {
     } catch (err) {
         console.error('Appointment scan error:', err);
         res.status(500).json({ error: 'Tarama hatası: ' + err.message });
+    }
+});
+
+// ==================== BİLDİRİM AYARLARI ====================
+
+// GET /api/appointments/notification-settings
+router.get('/notification-settings', authMiddleware, (req, res) => {
+    try {
+        const db = req.app.locals.db;
+        const settings = db.prepare(
+            'SELECT appointment_whatsapp_notify, appointment_sms_notify, sms_provider, sms_usercode, sms_password, sms_msgheader, appointment_reminder_minutes FROM companies WHERE id = ?'
+        ).get(req.user.company_id);
+        res.json({
+            appointment_whatsapp_notify: settings?.appointment_whatsapp_notify || 0,
+            appointment_sms_notify: settings?.appointment_sms_notify || 0,
+            sms_provider: settings?.sms_provider || 'netgsm',
+            sms_usercode: settings?.sms_usercode || '',
+            sms_password: settings?.sms_password ? '••••••' : '',
+            sms_msgheader: settings?.sms_msgheader || '',
+            appointment_reminder_minutes: settings?.appointment_reminder_minutes || 60,
+        });
+    } catch (err) {
+        res.status(500).json({ error: 'Ayarlar yüklenirken hata' });
+    }
+});
+
+// PATCH /api/appointments/notification-settings
+router.patch('/notification-settings', authMiddleware, adminOnly, (req, res) => {
+    try {
+        const db = req.app.locals.db;
+        const companyId = req.user.company_id;
+        const { appointment_whatsapp_notify, appointment_sms_notify, sms_usercode, sms_password, sms_msgheader, appointment_reminder_minutes } = req.body;
+
+        const updates = [];
+        const params = [];
+
+        if (appointment_whatsapp_notify !== undefined) { updates.push('appointment_whatsapp_notify = ?'); params.push(appointment_whatsapp_notify ? 1 : 0); }
+        if (appointment_sms_notify !== undefined) { updates.push('appointment_sms_notify = ?'); params.push(appointment_sms_notify ? 1 : 0); }
+        if (sms_usercode !== undefined) { updates.push('sms_usercode = ?'); params.push(sms_usercode); }
+        if (sms_password !== undefined && sms_password !== '••••••') { updates.push('sms_password = ?'); params.push(sms_password); }
+        if (sms_msgheader !== undefined) { updates.push('sms_msgheader = ?'); params.push(sms_msgheader); }
+        if (appointment_reminder_minutes !== undefined) { updates.push('appointment_reminder_minutes = ?'); params.push(appointment_reminder_minutes); }
+
+        if (updates.length > 0) {
+            params.push(companyId);
+            db.prepare(`UPDATE companies SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+        }
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Notification settings update error:', err);
+        res.status(500).json({ error: 'Ayarlar güncellenirken hata' });
     }
 });
 

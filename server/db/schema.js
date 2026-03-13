@@ -108,6 +108,23 @@ function initDB() {
     }
   } catch (err) { }
 
+  // Migration: Companies tablosuna randevu bildirim ayarları ekle
+  try {
+    const compInfo3 = db.prepare(`PRAGMA table_info(companies)`).all();
+    const addCompCol = (name, def) => {
+      if (compInfo3.length > 0 && !compInfo3.some(c => c.name === name)) {
+        db.exec(`ALTER TABLE companies ADD COLUMN ${name} ${def}`);
+      }
+    };
+    addCompCol('appointment_whatsapp_notify', 'INTEGER DEFAULT 0');
+    addCompCol('appointment_sms_notify', 'INTEGER DEFAULT 0');
+    addCompCol('sms_provider', "TEXT DEFAULT 'netgsm'");
+    addCompCol('sms_usercode', 'TEXT');
+    addCompCol('sms_password', 'TEXT');
+    addCompCol('sms_msgheader', 'TEXT');
+    addCompCol('appointment_reminder_minutes', 'INTEGER DEFAULT 60');
+  } catch (err) { }
+
   // Migration: appointments tablosuna yeni randevu sistemi sütunları ekle
   try {
     const apptInfo = db.prepare(`PRAGMA table_info(appointments)`).all();

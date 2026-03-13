@@ -79,6 +79,10 @@ startPolling(db, io);
 const { autoReconnect } = require('./services/whatsappWebService');
 autoReconnect(db, io);
 
+// Randevu hatırlatma zamanlayıcısı
+const { startReminderScheduler } = require('./services/appointmentNotifyService');
+startReminderScheduler(db);
+
 // Render free tier uyanık tut (her 4 dakikada self-ping)
 if (process.env.NODE_ENV === 'production') {
   const keepAliveUrl = process.env.FRONTEND_URL || 'https://crm-system-y92c.onrender.com';

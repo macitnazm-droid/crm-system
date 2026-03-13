@@ -2,6 +2,7 @@ const express = require('express');
 const { aiService } = require('../services/aiService');
 const { isDuplicate, markAsSent } = require('../services/messageDedup');
 const { sendOutboundMessage } = require('../services/metaService');
+const { sendAppointmentNotification } = require('../services/appointmentNotifyService');
 
 // Regex tabanlı randevu tespiti (AI'a bağımlı değil)
 function detectAppointment(messages, customerName) {
@@ -609,6 +610,20 @@ async function processIncomingMessage(db, io, data) {
                 );
 
                 console.log(`📅 AI randevu oluşturdu: ${customer.name} → ${apptDate} ${apptTime} (${serviceName.trim()})`);
+
+                // Randevu onay bildirimi gönder (WhatsApp/SMS)
+                sendAppointmentNotification(db, company_id, {
+                    customer_name: customer.name || customer_name || '',
+                    phone: customer.phone || phone || '',
+                    appointment_date: apptDate,
+                    start_time: apptTime,
+                    end_time: endTime,
+                    service_id: svc?.id || null,
+                    staff_id: stf?.id || null,
+                    notes: serviceName.trim()
+                }, 'confirmation').catch(err => {
+                    console.error('AI randevu bildirim hatası:', err.message);
+                });
 
                 // Randevu tag'ını yanıttan temizle
                 aiResponse.content = aiResponse.content.replace(/\s*\[RANDEVU:[^\]]+\]/, '').trim();

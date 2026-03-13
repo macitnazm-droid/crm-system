@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
-import { aiAPI, integrationsAPI } from '../lib/api';
+import { aiAPI, integrationsAPI, appointmentsAPI } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import {
     Settings, Bot, Save, Plus, Eye, EyeOff, AlertCircle,
     Instagram, MessageCircle, Link2, CheckCircle, X, Loader,
-    Webhook, Globe, Key, Phone, Shield, Trash2, QrCode, Wifi, WifiOff, Smartphone
+    Webhook, Globe, Key, Phone, Shield, Trash2, QrCode, Wifi, WifiOff, Smartphone, Bell, MessageSquare
 } from 'lucide-react';
 
 export default function SettingsPage() {
@@ -36,12 +36,24 @@ export default function SettingsPage() {
     // Platform bazlı AI toggle
     const [platformAI, setPlatformAI] = useState({ ai_instagram: 1, ai_whatsapp: 1, ai_messenger: 1 });
 
+    // Randevu bildirim ayarları
+    const [notifySettings, setNotifySettings] = useState({
+        appointment_whatsapp_notify: 0,
+        appointment_sms_notify: 0,
+        sms_usercode: '',
+        sms_password: '',
+        sms_msgheader: '',
+        appointment_reminder_minutes: 60
+    });
+
     useEffect(() => {
         loadData();
         // WhatsApp Web durumunu yükle
         integrationsAPI.waWebStatus().then(res => setWaWebStatus(res.data)).catch(() => {});
         // Platform AI ayarlarını yükle
         aiAPI.getPlatformSettings().then(res => setPlatformAI(res.data)).catch(() => {});
+        // Bildirim ayarlarını yükle
+        appointmentsAPI.getNotificationSettings().then(res => setNotifySettings(res.data)).catch(() => {});
     }, []);
 
     const loadData = async () => {
@@ -152,6 +164,7 @@ export default function SettingsPage() {
                 {[
                     { key: 'integrations', label: 'Entegrasyonlar', icon: Link2 },
                     { key: 'ai', label: 'AI Promptları', icon: Bot },
+                    { key: 'notifications', label: 'Bildirimler', icon: Bell },
                 ].map(t => (
                     <button key={t.key}
                         className={`btn btn-sm ${tab === t.key ? 'btn-primary' : 'btn-ghost'}`}
@@ -927,6 +940,135 @@ export default function SettingsPage() {
                     )}
                 </div>
             </>)}
+
+            {/* ========= BİLDİRİMLER TAB ========= */}
+            {tab === 'notifications' && (
+                <div className="glass-card" style={{ padding: '20px 24px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                        <Bell size={18} style={{ color: 'var(--accent-primary)' }} />
+                        <h3 style={{ fontSize: 15, fontWeight: 600 }}>Randevu Bildirimleri</h3>
+                    </div>
+                    <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 18 }}>
+                        Randevu oluşturulduğunda müşteriye otomatik onay mesajı gönderilir. Hatırlatma mesajı da randevudan önce gönderilir.
+                    </p>
+
+                    {/* WhatsApp / SMS Toggle */}
+                    <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 20 }}>
+                        {[
+                            { key: 'appointment_whatsapp_notify', label: 'WhatsApp Bildirimi', color: '#25D366', icon: '📱' },
+                            { key: 'appointment_sms_notify', label: 'SMS Bildirimi', color: '#FF6B35', icon: '📩' },
+                        ].map(p => (
+                            <div key={p.key} style={{
+                                flex: '1 1 200px', padding: '14px 18px', borderRadius: 'var(--radius-md)',
+                                border: '1px solid var(--border-color)', background: 'var(--bg-secondary)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12
+                            }}>
+                                <div>
+                                    <span style={{ fontSize: 13, fontWeight: 500, color: p.color }}>{p.icon} {p.label}</span>
+                                    <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                                        {p.key === 'appointment_whatsapp_notify' ? 'Aktif WhatsApp entegrasyonu gerekli' : 'NetGSM API bilgileri gerekli'}
+                                    </div>
+                                </div>
+                                <label className="toggle-switch">
+                                    <input type="checkbox" checked={!!notifySettings[p.key]}
+                                        disabled={user?.role !== 'admin'}
+                                        onChange={async (e) => {
+                                            const val = e.target.checked ? 1 : 0;
+                                            setNotifySettings(prev => ({ ...prev, [p.key]: val }));
+                                            try {
+                                                await appointmentsAPI.updateNotificationSettings({ [p.key]: val });
+                                                setTestResult({ success: true, message: `${p.label} ${val ? 'açıldı' : 'kapatıldı'}` });
+                                            } catch (err) {
+                                                setNotifySettings(prev => ({ ...prev, [p.key]: val ? 0 : 1 }));
+                                                setTestResult({ success: false, message: 'Ayar güncellenemedi' });
+                                            }
+                                        }} />
+                                    <span className="toggle-slider"></span>
+                                </label>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Hatırlatma süresi */}
+                    <div style={{ marginBottom: 20 }}>
+                        <label style={{ fontSize: 13, fontWeight: 500, display: 'block', marginBottom: 6 }}>Hatırlatma Süresi</label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <select className="form-input" style={{ width: 180 }}
+                                value={notifySettings.appointment_reminder_minutes}
+                                disabled={user?.role !== 'admin'}
+                                onChange={async (e) => {
+                                    const val = parseInt(e.target.value);
+                                    setNotifySettings(prev => ({ ...prev, appointment_reminder_minutes: val }));
+                                    try {
+                                        await appointmentsAPI.updateNotificationSettings({ appointment_reminder_minutes: val });
+                                        setTestResult({ success: true, message: 'Hatırlatma süresi güncellendi' });
+                                    } catch (err) {
+                                        setTestResult({ success: false, message: 'Güncellenemedi' });
+                                    }
+                                }}
+                            >
+                                <option value={30}>30 dakika önce</option>
+                                <option value={60}>1 saat önce</option>
+                                <option value={120}>2 saat önce</option>
+                                <option value={180}>3 saat önce</option>
+                                <option value={1440}>1 gün önce</option>
+                            </select>
+                            <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Randevudan bu kadar önce hatırlatma gönderilir</span>
+                        </div>
+                    </div>
+
+                    {/* SMS Ayarları (NetGSM) */}
+                    {!!notifySettings.appointment_sms_notify && (
+                        <div style={{ padding: '16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', background: 'var(--bg-tertiary)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                                <MessageSquare size={16} style={{ color: '#FF6B35' }} />
+                                <h4 style={{ fontSize: 14, fontWeight: 600 }}>NetGSM SMS Ayarları</h4>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
+                                <div>
+                                    <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Kullanıcı Kodu</label>
+                                    <input className="form-input" placeholder="NetGSM kullanıcı kodu"
+                                        value={notifySettings.sms_usercode}
+                                        disabled={user?.role !== 'admin'}
+                                        onChange={(e) => setNotifySettings(prev => ({ ...prev, sms_usercode: e.target.value }))} />
+                                </div>
+                                <div>
+                                    <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Şifre</label>
+                                    <input className="form-input" type="password" placeholder="NetGSM şifre"
+                                        value={notifySettings.sms_password}
+                                        disabled={user?.role !== 'admin'}
+                                        onChange={(e) => setNotifySettings(prev => ({ ...prev, sms_password: e.target.value }))} />
+                                </div>
+                                <div>
+                                    <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Mesaj Başlığı</label>
+                                    <input className="form-input" placeholder="SMS gönderici adı"
+                                        value={notifySettings.sms_msgheader}
+                                        disabled={user?.role !== 'admin'}
+                                        onChange={(e) => setNotifySettings(prev => ({ ...prev, sms_msgheader: e.target.value }))} />
+                                </div>
+                            </div>
+                            <button className="btn btn-sm btn-primary" style={{ marginTop: 14 }}
+                                disabled={user?.role !== 'admin' || saving}
+                                onClick={async () => {
+                                    setSaving(true);
+                                    try {
+                                        await appointmentsAPI.updateNotificationSettings({
+                                            sms_usercode: notifySettings.sms_usercode,
+                                            sms_password: notifySettings.sms_password,
+                                            sms_msgheader: notifySettings.sms_msgheader
+                                        });
+                                        setTestResult({ success: true, message: 'SMS ayarları kaydedildi' });
+                                    } catch (err) {
+                                        setTestResult({ success: false, message: 'Kaydetme hatası' });
+                                    } finally { setSaving(false); }
+                                }}
+                            >
+                                <Save size={14} /> Kaydet
+                            </button>
+                        </div>
+                    )}
+                </div>
+            )}
 
             <style>{`.spinning { animation: spin 1s linear infinite; }`}</style>
         </div>
