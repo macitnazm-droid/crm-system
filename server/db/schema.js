@@ -94,14 +94,25 @@ function initDB() {
     db.pragma('foreign_keys = ON');
   }
 
-  // Migration: Messages tablosu — source CHECK'e messenger ekle
+  // Migration: Messages tablosu — source CHECK'e messenger ekle (zorla)
   try {
     const msgTableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='messages'").get();
+    console.log('📋 Messages table SQL check:', msgTableSql ? msgTableSql.sql.substring(0, 200) : 'TABLE NOT FOUND');
+    console.log('📋 Includes messenger?', msgTableSql?.sql?.includes('messenger'));
+
+    // Eski başarısız migration'dan kalan tablo varsa temizle
+    const oldExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='messages_old'").get();
+    if (oldExists) {
+      console.log('🧹 Eski messages_old tablosu bulundu, temizleniyor...');
+      db.exec('DROP TABLE IF EXISTS messages_old');
+    }
+
     if (msgTableSql && !msgTableSql.sql.includes('messenger')) {
       console.log('🔄 Messages tablosu güncelleniyor (messenger desteği)...');
       db.pragma('foreign_keys = OFF');
       db.transaction(() => {
         const oldCols = db.prepare('PRAGMA table_info(messages)').all().map(c => c.name);
+        console.log('📋 Eski kolonlar:', oldCols.join(', '));
         db.exec(`ALTER TABLE messages RENAME TO messages_old`);
         db.exec(`
           CREATE TABLE messages (
@@ -121,14 +132,19 @@ function initDB() {
         `);
         const newCols = db.prepare('PRAGMA table_info(messages)').all().map(c => c.name);
         const commonCols = oldCols.filter(c => newCols.includes(c)).join(', ');
+        console.log('📋 Ortak kolonlar:', commonCols);
         db.exec(`INSERT INTO messages (${commonCols}) SELECT ${commonCols} FROM messages_old`);
         db.exec(`DROP TABLE messages_old`);
+        console.log('✅ Messages migration transaction tamamlandı');
       })();
       db.pragma('foreign_keys = ON');
       console.log('✅ Messages tablosu messenger desteği eklendi');
+    } else {
+      console.log('ℹ️ Messages tablosu zaten messenger destekli veya bulunamadı');
     }
   } catch (err) {
-    console.error('Messages messenger migration error:', err.message);
+    console.error('❌ Messages messenger migration error:', err.message);
+    console.error('Stack:', err.stack);
     db.pragma('foreign_keys = ON');
   }
 
