@@ -979,8 +979,8 @@ export default function SettingsPage() {
                                                 await appointmentsAPI.updateNotificationSettings({ [p.key]: val });
                                                 setTestResult({ success: true, message: `${p.label} ${val ? 'açıldı' : 'kapatıldı'}` });
                                             } catch (err) {
-                                                setNotifySettings(prev => ({ ...prev, [p.key]: val ? 0 : 1 }));
-                                                setTestResult({ success: false, message: 'Ayar güncellenemedi' });
+                                                // Toggle açık kalsın, sadece uyarı göster
+                                                setTestResult({ success: false, message: 'Sunucuya kaydedilemedi, tekrar deneyin' });
                                             }
                                         }} />
                                     <span className="toggle-slider"></span>
