@@ -166,16 +166,18 @@ async function initClient(db, io, companyId) {
 
     clients.set(companyId, client);
 
-    // Client'ı başlat
-    try {
-        await client.initialize();
-        return { status: 'initializing' };
-    } catch (err) {
-        console.error(`WhatsApp Web başlatma hatası (company: ${companyId}):`, err.message);
+    // Client'ı başlat (fire-and-forget — QR polling ile takip edilecek)
+    console.log(`🔄 WhatsApp Web client.initialize() başlatılıyor (company: ${companyId})...`);
+    client.initialize().then(() => {
+        console.log(`✅ WhatsApp Web client.initialize() tamamlandı (company: ${companyId})`);
+    }).catch((err) => {
+        console.error(`❌ WhatsApp Web başlatma hatası (company: ${companyId}):`, err.message);
+        console.error(`❌ Stack:`, err.stack?.substring(0, 500));
         clientStatus.set(companyId, { status: 'error', phone: null, name: null, error: err.message });
         clients.delete(companyId);
-        return { status: 'error', error: err.message };
-    }
+    });
+
+    return { status: 'initializing' };
 }
 
 async function disconnectClient(db, companyId) {

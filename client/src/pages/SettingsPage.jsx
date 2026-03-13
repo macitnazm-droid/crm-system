@@ -432,8 +432,9 @@ export default function SettingsPage() {
                                             <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
                                                 {waWebStatus.status === 'connected' ? 'Bağlı' :
                                                  waWebStatus.status === 'qr_ready' ? 'QR Kod Hazır — Telefondan Okutun' :
-                                                 waWebStatus.status === 'initializing' ? 'Başlatılıyor...' :
+                                                 waWebStatus.status === 'initializing' ? 'Başlatılıyor... (30-60 sn sürebilir)' :
                                                  waWebStatus.status === 'auth_failed' ? 'Kimlik Doğrulama Hatası' :
+                                                 waWebStatus.status === 'error' ? 'Başlatma Hatası' :
                                                  'Bağlı Değil'}
                                             </span>
                                             {waWebStatus.phone && (
@@ -480,6 +481,11 @@ export default function SettingsPage() {
                                                                     setWaWebQR(null);
                                                                     setWaWebLoading(false);
                                                                     setTestResult({ success: true, message: 'WhatsApp başarıyla bağlandı!' });
+                                                                }
+                                                                if (stRes.data.status === 'error') {
+                                                                    clearInterval(pollQR);
+                                                                    setWaWebLoading(false);
+                                                                    setTestResult({ success: false, message: 'WhatsApp başlatılamadı: ' + (stRes.data.error || 'Chromium hatası') });
                                                                 }
                                                             } catch (e) { }
                                                         }, 3000);
