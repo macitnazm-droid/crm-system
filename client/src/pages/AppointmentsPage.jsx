@@ -145,10 +145,12 @@ export default function AppointmentsPage() {
 
     // Sürükle-bırak state
     const [dragging, setDragging] = useState(null); // { id, startY, origTop, appt }
+    const justDragged = useRef(false); // sürükleme sonrası click'i engelle
     const gridRef = useRef(null);
 
     const HOUR_HEIGHT = 80;
     const START_HOUR = 8;
+    const DRAG_THRESHOLD = 5; // px — bu kadar hareket etmeden sürükleme sayılmaz
 
     const pxToTime = (px) => {
         const totalMin = Math.round((px / HOUR_HEIGHT) * 60) + START_HOUR * 60;
@@ -164,13 +166,16 @@ export default function AppointmentsPage() {
         e.stopPropagation();
         const [sh, sm] = appt.start_time.split(':').map(Number);
         const origTop = ((sh - START_HOUR) * HOUR_HEIGHT) + ((sm / 60) * HOUR_HEIGHT);
-        setDragging({ id: appt.id, startY: e.clientY, origTop, appt });
+        setDragging({ id: appt.id, startY: e.clientY, origTop, appt, moved: false });
     }, [isAdmin]);
 
     useEffect(() => {
         if (!dragging) return;
         const handleMove = (e) => {
             const delta = e.clientY - dragging.startY;
+            // Eşik kontrolü — küçük hareketlerde sürükleme başlatma
+            if (Math.abs(delta) < DRAG_THRESHOLD && !dragging.moved) return;
+            if (!dragging.moved) setDragging(prev => ({ ...prev, moved: true }));
             const el = document.getElementById(`appt-drag-${dragging.id}`);
             if (el) {
                 const newTop = Math.max(0, dragging.origTop + delta);
@@ -179,6 +184,7 @@ export default function AppointmentsPage() {
         };
         const handleUp = async (e) => {
             const delta = e.clientY - dragging.startY;
+            const wasDragged = Math.abs(delta) >= DRAG_THRESHOLD;
             const newTop = Math.max(0, dragging.origTop + delta);
             const newStart = pxToTime(newTop);
             const oldAppt = dragging.appt;
@@ -193,19 +199,24 @@ export default function AppointmentsPage() {
 
             setDragging(null);
 
-            if (newStart !== oldAppt.start_time) {
+            if (wasDragged && newStart !== oldAppt.start_time) {
+                justDragged.current = true;
+                setTimeout(() => { justDragged.current = false; }, 300);
                 try {
                     await appointmentsAPI.update(oldAppt.id, {
                         ...oldAppt,
                         start_time: newStart,
                         end_time: newEnd
                     });
-                    setMsg({ type: 'success', text: `Randevu ${newStart}'e taşındı` });
+                    setMsg({ type: 'success', text: `Randevu ${newStart}-${newEnd} olarak güncellendi` });
                     loadAppointments();
                 } catch (err) {
                     setMsg({ type: 'error', text: 'Taşıma hatası' });
                     loadAppointments();
                 }
+            } else if (!wasDragged) {
+                // Sürüklenmediyse — tıklama olarak işle, modal aç
+                loadAppointments(); // pozisyonu sıfırla
             }
         };
         window.addEventListener('mousemove', handleMove);
@@ -313,7 +324,7 @@ export default function AppointmentsPage() {
                                         return (
                                             <div key={a.id} id={`appt-drag-${a.id}`}
                                                 onMouseDown={(e) => handleDragStart(e, a)}
-                                                onClick={(e) => { e.stopPropagation(); if (!dragging) openEditAppt(a); }}
+                                                onClick={(e) => { e.stopPropagation(); if (!dragging && !justDragged.current) openEditAppt(a); }}
                                                 style={{
                                                     position: 'absolute', top: topPx, left: 4, right: 4,
                                                     height: heightPx, background: sColor + '20', border: `2px solid ${sColor}60`,
