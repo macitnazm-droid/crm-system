@@ -106,6 +106,7 @@ export const integrationsAPI = {
 export const appointmentsAPI = {
     list: () => api.get('/appointments'),
     updateStatus: (id, status) => api.patch(`/appointments/${id}/status`, { status }),
+    scan: () => api.post('/appointments/scan'),
 };
 
 // Super Admin

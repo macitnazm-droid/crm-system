@@ -1,5 +1,6 @@
 const express = require('express');
 const { authMiddleware } = require('../middleware/auth');
+const { aiService } = require('../services/aiService');
 
 const router = express.Router();
 
@@ -35,6 +36,57 @@ router.patch('/:id/status', authMiddleware, (req, res) => {
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: 'Güncelleme hatası' });
+    }
+});
+
+// POST /api/appointments/scan — Mevcut konuşmalardan randevu tara
+router.post('/scan', authMiddleware, async (req, res) => {
+    try {
+        const db = req.app.locals.db;
+        const companyId = req.user.company_id;
+
+        // En az 4 mesajı olan ve henüz randevu kaydı olmayan konuşmaları bul
+        const conversations = db.prepare(`
+            SELECT c.id as conv_id, c.customer_id, cu.name, cu.phone
+            FROM conversations c
+            JOIN customers cu ON c.customer_id = cu.id
+            WHERE c.company_id = ?
+            AND c.id NOT IN (SELECT conversation_id FROM appointments WHERE company_id = ?)
+            AND (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id) >= 4
+            ORDER BY c.updated_at DESC
+            LIMIT 20
+        `).all(companyId, companyId);
+
+        let found = 0;
+        for (const conv of conversations) {
+            try {
+                const messages = db.prepare(
+                    'SELECT * FROM messages WHERE conversation_id = ? AND company_id = ? ORDER BY created_at ASC'
+                ).all(conv.conv_id, companyId);
+
+                const customer = { name: conv.name, phone: conv.phone };
+                const appointment = await aiService.extractAppointment(messages, customer);
+
+                if (appointment) {
+                    db.prepare(`
+                        INSERT INTO appointments (company_id, customer_id, conversation_id, customer_name, phone, appointment_time, notes)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    `).run(companyId, conv.customer_id, conv.conv_id,
+                        appointment.customer_name || conv.name,
+                        appointment.phone || conv.phone,
+                        appointment.appointment_time,
+                        appointment.notes || null);
+                    found++;
+                }
+            } catch (err) {
+                console.error(`Randevu tarama hatası (conv: ${conv.conv_id}):`, err.message);
+            }
+        }
+
+        res.json({ scanned: conversations.length, found });
+    } catch (err) {
+        console.error('Appointment scan error:', err);
+        res.status(500).json({ error: 'Tarama hatası: ' + err.message });
     }
 });
 

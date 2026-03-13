@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { reportsAPI, appointmentsAPI } from '../lib/api';
-import { BarChart3, TrendingUp, Users, Bot, UserCheck, Percent, Calendar, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { BarChart3, TrendingUp, Users, Bot, UserCheck, Percent, Calendar, CheckCircle, XCircle, Clock, Search } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 
 export default function ReportsPage() {
@@ -10,6 +10,8 @@ export default function ReportsPage() {
     const [sources, setSources] = useState([]);
     const [appointments, setAppointments] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [scanning, setScanning] = useState(false);
+    const [scanResult, setScanResult] = useState(null);
 
     useEffect(() => { loadData(); }, []);
 
@@ -36,6 +38,20 @@ export default function ReportsPage() {
             await appointmentsAPI.updateStatus(id, status);
             setAppointments(prev => prev.map(a => a.id === id ? { ...a, status } : a));
         } catch (err) { console.error(err); }
+    };
+
+    const handleScan = async () => {
+        setScanning(true);
+        setScanResult(null);
+        try {
+            const res = await appointmentsAPI.scan();
+            setScanResult(res.data);
+            if (res.data.found > 0) {
+                const apptRes = await appointmentsAPI.list();
+                setAppointments(apptRes.data.appointments || []);
+            }
+        } catch (err) { console.error(err); }
+        finally { setScanning(false); }
     };
 
     if (loading) return <div className="loading-center"><div className="loading-spinner" /></div>;
@@ -80,13 +96,19 @@ export default function ReportsPage() {
                 <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 10 }}>
                     <Calendar size={18} style={{ color: 'var(--accent-primary)' }} />
                     <h3 style={{ fontSize: 15, fontWeight: 600 }}>AI Tespit Edilen Randevular</h3>
-                    <span style={{ marginLeft: 'auto', fontSize: 13, color: 'var(--text-secondary)' }}>{appointments.length} randevu</span>
+                    {scanResult && <span style={{ fontSize: 12, color: scanResult.found > 0 ? '#22c55e' : 'var(--text-muted)' }}>{scanResult.found > 0 ? `${scanResult.found} yeni randevu bulundu!` : `${scanResult.scanned} konuşma tarandı, yeni randevu yok`}</span>}
+                    <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <button className="btn btn-sm btn-ghost" onClick={handleScan} disabled={scanning} style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <Search size={13} /> {scanning ? 'Taranıyor...' : 'Randevuları Tara'}
+                        </button>
+                        <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{appointments.length} randevu</span>
+                    </span>
                 </div>
                 {appointments.length === 0 ? (
                     <div className="empty-state" style={{ padding: 40 }}>
                         <Calendar size={32} />
                         <p>Henüz randevu tespit edilmedi</p>
-                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Hot müşterilerin konuşmalarından otomatik tespit edilir</span>
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Konuşmalardan otomatik tespit edilir veya "Randevuları Tara" ile taratın</span>
                     </div>
                 ) : (
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
