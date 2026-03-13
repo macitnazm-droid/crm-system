@@ -1,7 +1,9 @@
 const express = require('express');
+const multer = require('multer');
 const { authMiddleware } = require('../middleware/auth');
 
 const router = express.Router();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 // GET /api/customers
 router.get('/', authMiddleware, (req, res) => {
@@ -31,6 +33,109 @@ router.get('/', authMiddleware, (req, res) => {
     } catch (err) {
         console.error('Get customers error:', err);
         res.status(500).json({ error: 'Müşteriler yüklenirken hata oluştu' });
+    }
+});
+
+// GET /api/customers/import/sample — Örnek CSV dosyası indir (/:id'den önce olmalı)
+router.get('/import/sample', authMiddleware, (req, res) => {
+    const bom = '\uFEFF';
+    const header = 'ad,telefon,email,kaynak,kategori,notlar';
+    const rows = [
+        'Ahmet Yılmaz,+905551234567,ahmet@email.com,whatsapp,warm,VIP müşteri',
+        'Ayşe Kaya,+905559876543,ayse@email.com,instagram,hot,Randevu aldı',
+        'Mehmet Demir,+905553456789,,manual,cold,',
+    ];
+    const csv = bom + header + '\n' + rows.join('\n');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename=musteri-import-ornegi.csv');
+    res.send(csv);
+});
+
+// POST /api/customers/import — CSV ile toplu müşteri ekle
+router.post('/import', authMiddleware, upload.single('file'), (req, res) => {
+    try {
+        const db = req.app.locals.db;
+        const companyId = req.user.company_id;
+
+        if (!req.file) {
+            return res.status(400).json({ error: 'Dosya yüklenmedi' });
+        }
+
+        let content = req.file.buffer.toString('utf-8');
+        if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1);
+
+        const lines = content.split(/\r?\n/).filter(l => l.trim());
+        if (lines.length < 2) {
+            return res.status(400).json({ error: 'Dosya boş veya sadece başlık satırı var' });
+        }
+
+        const headers = lines[0].toLowerCase().trim().split(',').map(h => h.trim());
+
+        const colMap = {
+            name: headers.findIndex(h => ['ad', 'isim', 'name', 'müşteri', 'musteri'].includes(h)),
+            phone: headers.findIndex(h => ['telefon', 'phone', 'tel', 'numara'].includes(h)),
+            email: headers.findIndex(h => ['email', 'e-posta', 'eposta', 'mail'].includes(h)),
+            source: headers.findIndex(h => ['kaynak', 'source', 'kanal', 'platform'].includes(h)),
+            category: headers.findIndex(h => ['kategori', 'category', 'cat'].includes(h)),
+            notes: headers.findIndex(h => ['notlar', 'notes', 'not', 'açıklama'].includes(h)),
+        };
+
+        if (colMap.name === -1) {
+            return res.status(400).json({ error: 'CSV dosyasında "ad" veya "name" kolonu bulunamadı' });
+        }
+
+        const validSources = ['instagram', 'whatsapp', 'messenger', 'api', 'manual'];
+        const validCategories = ['hot', 'warm', 'cold', 'unqualified'];
+        const now = new Date().toISOString();
+
+        const insert = db.prepare(`
+            INSERT INTO customers (company_id, name, phone, email, source, category, notes, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        let imported = 0;
+        let skipped = 0;
+        const errors = [];
+
+        const importMany = db.transaction(() => {
+            for (let i = 1; i < lines.length; i++) {
+                const line = lines[i].trim();
+                if (!line) continue;
+
+                const cols = line.match(/(".*?"|[^",]+|(?<=,)(?=,)|(?<=,)$)/g)?.map(c => c.replace(/^"|"$/g, '').trim()) || line.split(',').map(c => c.trim());
+
+                const name = colMap.name >= 0 ? cols[colMap.name] : '';
+                const phone = colMap.phone >= 0 ? cols[colMap.phone] || '' : '';
+                const email = colMap.email >= 0 ? cols[colMap.email] || '' : '';
+                const sourceRaw = colMap.source >= 0 ? (cols[colMap.source] || '').toLowerCase() : 'manual';
+                const catRaw = colMap.category >= 0 ? (cols[colMap.category] || '').toLowerCase() : 'cold';
+                const notes = colMap.notes >= 0 ? cols[colMap.notes] || '' : '';
+
+                if (!name) {
+                    skipped++;
+                    errors.push(`Satır ${i + 1}: İsim boş, atlandı`);
+                    continue;
+                }
+
+                const source = validSources.includes(sourceRaw) ? sourceRaw : 'manual';
+                const category = validCategories.includes(catRaw) ? catRaw : 'cold';
+
+                try {
+                    insert.run(companyId, name, phone, email, source, category, notes, now, now);
+                    imported++;
+                } catch (err) {
+                    skipped++;
+                    errors.push(`Satır ${i + 1}: ${err.message}`);
+                }
+            }
+        });
+
+        importMany();
+
+        res.json({ success: true, imported, skipped, total: lines.length - 1, errors: errors.slice(0, 10) });
+    } catch (err) {
+        console.error('Import customers error:', err);
+        res.status(500).json({ error: 'İçe aktarma sırasında hata: ' + err.message });
     }
 });
 
@@ -80,7 +185,6 @@ router.patch('/:id/category', authMiddleware, (req, res) => {
         updates.push('updated_at = ?');
         params.push(new Date().toISOString());
 
-        // WHERE clause
         params.push(req.params.id);
         params.push(companyId);
 
@@ -92,7 +196,6 @@ router.patch('/:id/category', authMiddleware, (req, res) => {
 
         const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id);
 
-        // Kategori değişikliğini broadcast et
         const io = req.app.locals.io;
         io.to(`company:${companyId}`).emit('customer:categorized', { customer });
 

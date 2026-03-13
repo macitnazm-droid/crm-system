@@ -60,6 +60,12 @@ export const customersAPI = {
     list: (params) => api.get('/customers', { params }),
     get: (id) => api.get(`/customers/${id}`),
     updateCategory: (id, category, leadScore) => api.patch(`/customers/${id}/category`, { category, lead_score: leadScore }),
+    downloadSample: () => api.get('/customers/import/sample', { responseType: 'blob' }),
+    import: (file) => {
+        const fd = new FormData();
+        fd.append('file', file);
+        return api.post('/customers/import', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+    },
 };
 
 // AI

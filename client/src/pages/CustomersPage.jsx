@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { customersAPI } from '../lib/api';
-import { Users, Search, Filter, Edit3, Save, X } from 'lucide-react';
+import { Users, Search, Filter, Edit3, Save, X, Upload, Download, FileSpreadsheet, CheckCircle, AlertCircle } from 'lucide-react';
 
 export default function CustomersPage() {
     const [customers, setCustomers] = useState([]);
@@ -9,6 +9,10 @@ export default function CustomersPage() {
     const [catFilter, setCatFilter] = useState('all');
     const [editing, setEditing] = useState(null);
     const [editCat, setEditCat] = useState('');
+    const [showImport, setShowImport] = useState(false);
+    const [importing, setImporting] = useState(false);
+    const [importResult, setImportResult] = useState(null);
+    const fileInputRef = useRef(null);
 
     useEffect(() => { loadCustomers(); }, [catFilter, search]);
 
@@ -26,6 +30,35 @@ export default function CustomersPage() {
             setEditing(null);
             loadCustomers();
         } catch (err) { console.error(err); }
+    };
+
+    const handleDownloadSample = async () => {
+        try {
+            const res = await customersAPI.downloadSample();
+            const url = window.URL.createObjectURL(new Blob([res.data]));
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'musteri-import-ornegi.csv';
+            a.click();
+            window.URL.revokeObjectURL(url);
+        } catch (err) { console.error(err); }
+    };
+
+    const handleImport = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setImporting(true);
+        setImportResult(null);
+        try {
+            const res = await customersAPI.import(file);
+            setImportResult(res.data);
+            loadCustomers();
+        } catch (err) {
+            setImportResult({ success: false, error: err.response?.data?.error || err.message });
+        } finally {
+            setImporting(false);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        }
     };
 
     const getCatBadge = (c) => {
@@ -52,10 +85,58 @@ export default function CustomersPage() {
 
     return (
         <div className="animate-fade-in">
-            <div className="page-header">
-                <h1>Müşteriler</h1>
-                <p>Tüm müşterilerinizi görüntüleyin ve kategorize edin</p>
+            <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                    <h1>Müşteriler</h1>
+                    <p>Tüm müşterilerinizi görüntüleyin ve kategorize edin</p>
+                </div>
+                <button className="btn btn-primary" onClick={() => setShowImport(!showImport)} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+                    <Upload size={15} /> İçe Aktar
+                </button>
             </div>
+
+            {/* Import Panel */}
+            {showImport && (
+                <div className="glass-card" style={{ marginBottom: 20, padding: '20px 24px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                        <FileSpreadsheet size={20} style={{ color: 'var(--accent-primary)' }} />
+                        <h3 style={{ fontSize: 15, fontWeight: 600 }}>CSV ile Müşteri İçe Aktar</h3>
+                    </div>
+                    <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16, lineHeight: 1.5 }}>
+                        Önce örnek dosyayı indirin, Excel veya Google Sheets ile düzenleyin, sonra yükleyin.
+                        Desteklenen format: <strong>.csv</strong> (UTF-8)
+                    </p>
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <button className="btn btn-ghost" onClick={handleDownloadSample} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+                            <Download size={14} /> Örnek Dosya İndir
+                        </button>
+                        <label className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', opacity: importing ? 0.6 : 1 }}>
+                            <Upload size={14} /> {importing ? 'Yükleniyor...' : 'CSV Dosya Yükle'}
+                            <input ref={fileInputRef} type="file" accept=".csv" onChange={handleImport} style={{ display: 'none' }} disabled={importing} />
+                        </label>
+                    </div>
+
+                    {importResult && (
+                        <div style={{
+                            marginTop: 14, padding: '12px 16px', borderRadius: 'var(--radius-md)',
+                            background: importResult.success ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)',
+                            border: `1px solid ${importResult.success ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: importResult.errors?.length ? 8 : 0 }}>
+                                {importResult.success
+                                    ? <><CheckCircle size={16} style={{ color: '#22c55e' }} /><span style={{ fontSize: 13, color: '#22c55e', fontWeight: 600 }}>{importResult.imported} müşteri eklendi</span>{importResult.skipped > 0 && <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>({importResult.skipped} atlandı)</span>}</>
+                                    : <><AlertCircle size={16} style={{ color: '#ef4444' }} /><span style={{ fontSize: 13, color: '#ef4444' }}>{importResult.error}</span></>
+                                }
+                            </div>
+                            {importResult.errors?.length > 0 && (
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                                    {importResult.errors.map((e, i) => <div key={i}>{e}</div>)}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* Filters */}
             <div style={{ display: 'flex', gap: 12, marginBottom: 20, alignItems: 'center' }}>
