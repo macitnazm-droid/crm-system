@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { appointmentsAPI } from '../lib/api';
 import {
@@ -143,8 +143,81 @@ export default function AppointmentsPage() {
         } catch (e) { }
     };
 
+    // Sürükle-bırak state
+    const [dragging, setDragging] = useState(null); // { id, startY, origTop, appt }
+    const gridRef = useRef(null);
+
+    const HOUR_HEIGHT = 80;
+    const START_HOUR = 8;
+
+    const pxToTime = (px) => {
+        const totalMin = Math.round((px / HOUR_HEIGHT) * 60) + START_HOUR * 60;
+        const snapped = Math.round(totalMin / 15) * 15; // 15dk'ya yuvarla
+        const h = Math.floor(snapped / 60);
+        const m = snapped % 60;
+        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    };
+
+    const handleDragStart = useCallback((e, appt) => {
+        if (!isAdmin) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const [sh, sm] = appt.start_time.split(':').map(Number);
+        const origTop = ((sh - START_HOUR) * HOUR_HEIGHT) + ((sm / 60) * HOUR_HEIGHT);
+        setDragging({ id: appt.id, startY: e.clientY, origTop, appt });
+    }, [isAdmin]);
+
+    useEffect(() => {
+        if (!dragging) return;
+        const handleMove = (e) => {
+            const delta = e.clientY - dragging.startY;
+            const el = document.getElementById(`appt-drag-${dragging.id}`);
+            if (el) {
+                const newTop = Math.max(0, dragging.origTop + delta);
+                el.style.top = `${newTop}px`;
+            }
+        };
+        const handleUp = async (e) => {
+            const delta = e.clientY - dragging.startY;
+            const newTop = Math.max(0, dragging.origTop + delta);
+            const newStart = pxToTime(newTop);
+            const oldAppt = dragging.appt;
+
+            // Süre farkını hesapla
+            const [osh, osm] = oldAppt.start_time.split(':').map(Number);
+            const [oeh, oem] = (oldAppt.end_time || `${osh + 1}:00`).split(':').map(Number);
+            const duration = (oeh * 60 + oem) - (osh * 60 + osm);
+            const [nsh, nsm] = newStart.split(':').map(Number);
+            const endMin = nsh * 60 + nsm + duration;
+            const newEnd = `${String(Math.floor(endMin / 60)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}`;
+
+            setDragging(null);
+
+            if (newStart !== oldAppt.start_time) {
+                try {
+                    await appointmentsAPI.update(oldAppt.id, {
+                        ...oldAppt,
+                        start_time: newStart,
+                        end_time: newEnd
+                    });
+                    setMsg({ type: 'success', text: `Randevu ${newStart}'e taşındı` });
+                    loadAppointments();
+                } catch (err) {
+                    setMsg({ type: 'error', text: 'Taşıma hatası' });
+                    loadAppointments();
+                }
+            }
+        };
+        window.addEventListener('mousemove', handleMove);
+        window.addEventListener('mouseup', handleUp);
+        return () => {
+            window.removeEventListener('mousemove', handleMove);
+            window.removeEventListener('mouseup', handleUp);
+        };
+    }, [dragging]);
+
     // Saat dilimleri (08:00 - 21:00)
-    const hours = Array.from({ length: 14 }, (_, i) => `${String(i + 8).padStart(2, '0')}:00`);
+    const hours = Array.from({ length: 14 }, (_, i) => `${String(i + START_HOUR).padStart(2, '0')}:00`);
 
     const dateLabel = `${selectedDate.getDate()} ${MONTHS_TR[selectedDate.getMonth()]} ${DAYS_TR[selectedDate.getDay()]}`;
 
@@ -210,49 +283,60 @@ export default function AppointmentsPage() {
                     {/* Günlük Takvim */}
                     {view === 'day' && (
                         <div style={{ overflowY: 'auto', maxHeight: 'calc(100vh - 260px)' }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '60px 1fr', minHeight: hours.length * 80 }}>
-                                {hours.map(h => (
-                                    <div key={h} style={{ gridColumn: '1', height: 80, display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end', paddingRight: 8, paddingTop: 2, fontSize: 11, color: 'var(--text-tertiary)', borderRight: '1px solid var(--border-color)' }}>
-                                        {h}
-                                    </div>
-                                ))}
-                                {hours.map(h => (
-                                    <div key={`cell-${h}`} style={{ gridColumn: '2', height: 80, borderBottom: '1px solid var(--border-color)', position: 'relative', cursor: isAdmin ? 'pointer' : 'default' }}
-                                        onClick={() => isAdmin && openNewAppt(h)}>
-                                    </div>
-                                ))}
-                                {/* Randevu blokları */}
-                                {appointments.filter(a => a.status !== 'cancelled').map(a => {
-                                    if (!a.start_time) return null;
-                                    const [sh, sm] = a.start_time.split(':').map(Number);
-                                    const [eh, em] = (a.end_time || `${sh + 1}:00`).split(':').map(Number);
-                                    const topPx = ((sh - 8) * 80) + ((sm / 60) * 80);
-                                    const heightPx = Math.max(((eh * 60 + em) - (sh * 60 + sm)) / 60 * 80, 30);
-                                    const sColor = a.service_color || a.staff_color || '#6366f1';
-                                    const st = STATUS_MAP[a.status] || STATUS_MAP.pending;
-
-                                    return (
-                                        <div key={a.id} onClick={(e) => { e.stopPropagation(); openEditAppt(a); }}
-                                            style={{
-                                                gridColumn: '2', position: 'absolute', top: topPx, left: 4, right: 4,
-                                                height: heightPx, background: sColor + '20', border: `2px solid ${sColor}60`,
-                                                borderLeft: `4px solid ${sColor}`, borderRadius: 6, padding: '4px 8px',
-                                                cursor: 'pointer', overflow: 'hidden', fontSize: 12, zIndex: 2
-                                            }}>
-                                            <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                                                {a.customer_name || '-'}
-                                            </div>
-                                            <div style={{ color: 'var(--text-secondary)', fontSize: 11 }}>
-                                                {a.service_name || a.notes || ''} {a.start_time}-{a.end_time}
-                                            </div>
-                                            {a.staff_name && (
-                                                <div style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
-                                                    {a.staff_name}
-                                                </div>
-                                            )}
+                            <div style={{ display: 'flex', minHeight: hours.length * HOUR_HEIGHT }}>
+                                {/* Saat etiketleri */}
+                                <div style={{ width: 60, flexShrink: 0, borderRight: '1px solid var(--border-color)' }}>
+                                    {hours.map(h => (
+                                        <div key={h} style={{ height: HOUR_HEIGHT, display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end', paddingRight: 8, paddingTop: 2, fontSize: 11, color: 'var(--text-tertiary)' }}>
+                                            {h}
                                         </div>
-                                    );
-                                })}
+                                    ))}
+                                </div>
+                                {/* Takvim alanı (randevular burada) */}
+                                <div ref={gridRef} style={{ flex: 1, position: 'relative' }}>
+                                    {/* Saat çizgileri + tıklanabilir alanlar */}
+                                    {hours.map(h => (
+                                        <div key={`cell-${h}`}
+                                            style={{ height: HOUR_HEIGHT, borderBottom: '1px solid var(--border-color)', cursor: isAdmin ? 'pointer' : 'default' }}
+                                            onClick={() => isAdmin && openNewAppt(h)}>
+                                        </div>
+                                    ))}
+                                    {/* Randevu blokları */}
+                                    {appointments.filter(a => a.status !== 'cancelled').map(a => {
+                                        if (!a.start_time) return null;
+                                        const [sh, sm] = a.start_time.split(':').map(Number);
+                                        const [eh, em] = (a.end_time || `${sh + 1}:00`).split(':').map(Number);
+                                        const topPx = ((sh - START_HOUR) * HOUR_HEIGHT) + ((sm / 60) * HOUR_HEIGHT);
+                                        const heightPx = Math.max(((eh * 60 + em) - (sh * 60 + sm)) / 60 * HOUR_HEIGHT, 30);
+                                        const sColor = a.service_color || a.staff_color || '#6366f1';
+
+                                        return (
+                                            <div key={a.id} id={`appt-drag-${a.id}`}
+                                                onMouseDown={(e) => handleDragStart(e, a)}
+                                                onClick={(e) => { e.stopPropagation(); if (!dragging) openEditAppt(a); }}
+                                                style={{
+                                                    position: 'absolute', top: topPx, left: 4, right: 4,
+                                                    height: heightPx, background: sColor + '20', border: `2px solid ${sColor}60`,
+                                                    borderLeft: `4px solid ${sColor}`, borderRadius: 6, padding: '4px 8px',
+                                                    cursor: isAdmin ? 'grab' : 'pointer', overflow: 'hidden', fontSize: 12, zIndex: 2,
+                                                    userSelect: 'none', transition: dragging?.id === a.id ? 'none' : 'top 0.2s'
+                                                }}>
+                                                <div style={{ fontWeight: 600, color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between' }}>
+                                                    <span>{a.customer_name || '-'}</span>
+                                                    <span style={{ fontSize: 10, fontWeight: 400, color: sColor }}>{a.start_time}-{a.end_time}</span>
+                                                </div>
+                                                <div style={{ color: 'var(--text-secondary)', fontSize: 11 }}>
+                                                    {a.service_name || a.notes || ''}
+                                                </div>
+                                                {a.staff_name && (
+                                                    <div style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
+                                                        👤 {a.staff_name}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
                             </div>
                         </div>
                     )}
