@@ -517,8 +517,8 @@ async function processIncomingMessage(db, io, data) {
         customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(customer.id);
         io.to(`company:${company_id}`).emit('customer:categorized', { customer });
 
-        // Randevu tespiti (sadece hot müşteriler)
-        if (categorization.category === 'hot') {
+        // Randevu tespiti — en az 4 mesaj varsa kontrol et
+        if (allMessages.length >= 4) {
             try {
                 const existing = db.prepare('SELECT id FROM appointments WHERE conversation_id = ? AND company_id = ?').get(conversation.id, company_id);
                 if (!existing) {
