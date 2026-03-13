@@ -1,5 +1,5 @@
 const { processIncomingMessage } = require('../routes/webhooks');
-const { isDuplicate } = require('./messageDedup');
+const { isDuplicate, wasSentByUs } = require('./messageDedup');
 
 // Her entegrasyon için son kontrol zamanını tut
 const lastPolledAt = new Map();   // key: `${companyId}_${integId}` -> ISO string
@@ -83,8 +83,10 @@ async function pollIntegration(db, io, integration) {
             const msgTime = msg.timestamp || msg.created_at || msg.date;
             if (msgTime && msgTime < since) continue;
 
-            // Sadece gelen mesajlar
-            if (msg.is_sender === true || msg.is_sender === 1) continue;
+            // Sadece gelen mesajlar (kendi gönderdiğimiz mesajları atla)
+            if (msg.is_sender === true || msg.is_sender === 1 || msg.is_sender === 'true') continue;
+            // direction field varsa kontrol et
+            if (msg.direction === 'outbound' || msg.direction === 'sent') continue;
 
             // Tekrar işleme (webhook ile paylaşımlı dedup)
             const msgId = msg.id;
@@ -97,6 +99,12 @@ async function pollIntegration(db, io, integration) {
             const text = msg.text || msg.body || msg.content;
 
             if (!senderId || !text) continue;
+
+            // AI'ın kendi gönderdiği mesajı geri alıyorsak atla
+            if (wasSentByUs(text)) {
+                console.log(`⏭ Kendi gönderdiğimiz mesaj (poller), atlanıyor: "${text.substring(0, 40)}"`);
+                continue;
+            }
 
             const providerRaw = (msg.provider || chat.provider || chat.account_type || integration.platform || '').toUpperCase();
             const source = providerRaw.includes('WHATSAPP') ? 'whatsapp' : 'instagram';

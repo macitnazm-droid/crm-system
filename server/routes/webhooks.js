@@ -1,6 +1,6 @@
 const express = require('express');
 const { aiService } = require('../services/aiService');
-const { isDuplicate } = require('../services/messageDedup');
+const { isDuplicate, markAsSent } = require('../services/messageDedup');
 const { sendOutboundMessage } = require('../services/metaService');
 
 const router = express.Router();
@@ -468,6 +468,14 @@ async function processIncomingMessage(db, io, data) {
     let aiMessage = null;
     if (conversation.ai_enabled) {
         const messages = db.prepare('SELECT * FROM messages WHERE conversation_id = ? AND company_id = ? ORDER BY created_at ASC').all(conversation.id, company_id);
+
+        // Sonsuz döngü koruması: Son 3 mesajın hepsi outbound (AI) ise yanıt verme
+        const lastThree = messages.slice(-3);
+        if (lastThree.length >= 3 && lastThree.every(m => m.direction === 'outbound')) {
+            console.log(`⏭ Sonsuz döngü koruması: Son 3 mesaj outbound, AI yanıtı atlanıyor (conv: ${conversation.id})`);
+            return { customer, conversation, message: inboundMessage };
+        }
+
         const prompt = db.prepare('SELECT * FROM ai_prompts WHERE company_id = ? AND is_active = 1 ORDER BY id DESC LIMIT 1').get(company_id);
         const systemPrompt = prompt?.system_prompt || 'Sen bir satış asistanısın.';
 
@@ -501,6 +509,7 @@ async function processIncomingMessage(db, io, data) {
                 text: aiResponse.content
             });
             if (sendResult.sent) {
+                markAsSent(aiResponse.content);
                 console.log(`🤖 AI yanıtı gönderildi (${sendResult.provider}): "${aiResponse.content.substring(0, 50)}"`);
             }
         } catch (outboundErr) {
