@@ -3,6 +3,56 @@ const { aiService } = require('../services/aiService');
 const { isDuplicate, markAsSent } = require('../services/messageDedup');
 const { sendOutboundMessage } = require('../services/metaService');
 
+// Regex tabanlı randevu tespiti (AI'a bağımlı değil)
+function detectAppointment(messages, customerName) {
+    // Son 6 mesajı kontrol et (en güncel konuşma)
+    const recent = messages.slice(-6).map(m => m.content).join(' ');
+    const text = recent.toLowerCase();
+
+    // Randevu anahtar kelimeleri
+    const hasAppointmentKeyword = /randevu|appointment|rezerv|saat\s*\d|:\d{2}|buluş|görüş|gelece[gğ]|bekl[ei]yor/i.test(text);
+    if (!hasAppointmentKeyword) return null;
+
+    // Tarih tespiti
+    let dateStr = '';
+    // "20 mart", "15 nisan", "3 ocak" vs.
+    const dateMatch = recent.match(/(\d{1,2})\s*(ocak|şubat|mart|nisan|mayıs|haziran|temmuz|ağustos|eylül|ekim|kasım|aralık)/i);
+    // "yarın", "bugün"
+    const relativeMatch = recent.match(/\b(yarın|bugün|öbür\s*gün|haftaya)\b/i);
+
+    if (dateMatch) {
+        dateStr = `${dateMatch[1]} ${dateMatch[2]}`;
+    } else if (relativeMatch) {
+        const today = new Date();
+        if (relativeMatch[1].toLowerCase() === 'yarın') {
+            today.setDate(today.getDate() + 1);
+        } else if (relativeMatch[1].toLowerCase().includes('öbür')) {
+            today.setDate(today.getDate() + 2);
+        }
+        dateStr = today.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' });
+    }
+
+    // Saat tespiti
+    let timeStr = '';
+    const timeMatch = recent.match(/(?:saat\s*)?(\d{1,2})[:.:](\d{2})/i) || recent.match(/(?:saat\s*)(\d{1,2}):?(\d{2})?/i);
+    if (timeMatch) {
+        timeStr = `${timeMatch[1]}:${timeMatch[2] || '00'}`;
+    }
+
+    if (!dateStr && !timeStr) return null;
+
+    // Notlar — AI yanıtından hizmet bilgisi çıkar
+    let notes = '';
+    const serviceMatch = recent.match(/(protez|tırnak|manikür|pedikür|saç|kesim|boyama|bakım|masaj|cilt|epilasyon|lazer|dolgu|botoks)/i);
+    if (serviceMatch) notes = serviceMatch[0];
+
+    return {
+        customer_name: customerName,
+        appointment_time: [dateStr, timeStr].filter(Boolean).join(' Saat: '),
+        notes: notes || null
+    };
+}
+
 const router = express.Router();
 
 // POST /api/webhooks/instagram — Meta Graph API Instagram webhook
@@ -526,19 +576,19 @@ async function processIncomingMessage(db, io, data) {
         customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(customer.id);
         io.to(`company:${company_id}`).emit('customer:categorized', { customer });
 
-        // Randevu tespiti — en az 4 mesaj varsa kontrol et
-        if (allMessages.length >= 4) {
+        // Randevu tespiti — regex tabanlı (AI çağrısına bağımlı değil)
+        if (allMessages.length >= 2) {
             try {
                 const existing = db.prepare('SELECT id FROM appointments WHERE conversation_id = ? AND company_id = ?').get(conversation.id, company_id);
                 if (!existing) {
-                    const appointment = await aiService.extractAppointment(allMessages, customer);
+                    const appointment = detectAppointment(allMessages, customer.name);
                     if (appointment) {
                         db.prepare(`
                             INSERT INTO appointments (company_id, customer_id, conversation_id, customer_name, phone, appointment_time, notes)
                             VALUES (?, ?, ?, ?, ?, ?, ?)
                         `).run(company_id, customer.id, conversation.id,
                             appointment.customer_name || customer.name,
-                            appointment.phone || customer.phone,
+                            customer.phone || '',
                             appointment.appointment_time,
                             appointment.notes || null);
                         console.log(`📅 Randevu tespit edildi: ${appointment.customer_name} - ${appointment.appointment_time}`);
@@ -691,3 +741,4 @@ router.post('/unipile/:companyId', async (req, res) => {
 
 module.exports = router;
 module.exports.processIncomingMessage = processIncomingMessage;
+module.exports.detectAppointment = detectAppointment;
