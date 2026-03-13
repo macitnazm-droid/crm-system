@@ -547,17 +547,6 @@ async function processIncomingMessage(db, io, data) {
             const staffData = db.prepare('SELECT name, role FROM staff WHERE company_id = ? AND is_active = 1').all(company_id);
 
             if (servicesData.length > 0 || staffData.length > 0) {
-                const today = new Date().toISOString().split('T')[0];
-                const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
-
-                // Bugün ve yarın için mevcut randevuları al
-                const todayAppts = db.prepare(
-                    "SELECT start_time, end_time, staff_id, customer_name FROM appointments WHERE company_id = ? AND appointment_date = ? AND status NOT IN ('cancelled') ORDER BY start_time"
-                ).all(company_id, today);
-                const tomorrowAppts = db.prepare(
-                    "SELECT start_time, end_time, staff_id, customer_name FROM appointments WHERE company_id = ? AND appointment_date = ? AND status NOT IN ('cancelled') ORDER BY start_time"
-                ).all(company_id, tomorrow);
-
                 let apptContext = '\n\n--- RANDEVU SİSTEMİ BİLGİLERİ ---';
                 if (servicesData.length > 0) {
                     apptContext += '\nHizmetler: ' + servicesData.map(s => `${s.name} (${s.duration}dk${s.price > 0 ? ', ' + s.price + '₺' : ''})`).join(', ');
@@ -566,15 +555,26 @@ async function processIncomingMessage(db, io, data) {
                     apptContext += '\nPersonel: ' + staffData.map(s => `${s.name}${s.role ? ' (' + s.role + ')' : ''}`).join(', ');
                 }
 
-                apptContext += `\nBugün (${today}) dolu saatler: ` + (todayAppts.length > 0 ? todayAppts.map(a => `${a.start_time}-${a.end_time}`).join(', ') : 'Boş');
-                apptContext += `\nYarın (${tomorrow}) dolu saatler: ` + (tomorrowAppts.length > 0 ? tomorrowAppts.map(a => `${a.start_time}-${a.end_time}`).join(', ') : 'Boş');
+                // Bugün, yarın + önümüzdeki 14 günün dolu saatlerini ver
                 apptContext += '\nÇalışma saatleri: 09:00-19:00';
+                apptContext += '\n\nDOLU RANDEVULAR:';
+                for (let d = 0; d < 14; d++) {
+                    const dateObj = new Date(Date.now() + d * 86400000);
+                    const dateStr = dateObj.toISOString().split('T')[0];
+                    const dayAppts = db.prepare(
+                        "SELECT start_time, end_time, customer_name FROM appointments WHERE company_id = ? AND appointment_date = ? AND status NOT IN ('cancelled') ORDER BY start_time"
+                    ).all(company_id, dateStr);
+                    if (dayAppts.length > 0) {
+                        apptContext += `\n${dateStr}: ` + dayAppts.map(a => `${a.start_time}-${a.end_time} (${a.customer_name || '?'})`).join(', ');
+                    }
+                }
+
                 apptContext += '\n\nÖNEMLİ KURALLAR:';
-                apptContext += '\n- [RANDEVU: ...] tag\'ını SADECE müşteri açıkça yeni bir randevu talep ettiğinde ve tarih+saat netleştiğinde ekle.';
+                apptContext += '\n- Yukarıdaki dolu saatlere KESİNLİKLE randevu verme! Dolu olan saate randevu istenmişse "bu saat dolu, şu saatler müsait" de.';
+                apptContext += '\n- [RANDEVU: ...] tag\'ını SADECE müşteri açıkça yeni bir randevu talep ettiğinde ve tarih+saat netleştiğinde ve o saat MÜSAIT olduğunda ekle.';
                 apptContext += '\n- Müşteri "teşekkür", "tamam", "görüşürüz" gibi kapanış mesajları gönderiyorsa ASLA randevu tag\'ı ekleme.';
-                apptContext += '\n- Zaten oluşturulmuş bir randevuyu tekrar oluşturma.';
+                apptContext += '\n- Zaten oluşturulmuş bir randevuyu tekrar oluşturma. Aynı kişi aynı saate tekrar isterse "zaten randevunuz var" de.';
                 apptContext += '\n- Tag formatı: [RANDEVU: tarih=YYYY-MM-DD, saat=HH:MM, hizmet=Hizmet Adı, personel=Personel Adı]';
-                apptContext += '\n- Örnek: [RANDEVU: tarih=2026-03-15, saat=14:00, hizmet=Manikür, personel=Büşra]';
                 apptContext += '\n--- RANDEVU SİSTEMİ BİLGİLERİ SONU ---';
 
                 systemPrompt += apptContext;
