@@ -303,6 +303,34 @@ export default function SettingsPage() {
                                             Bu URL'yi Unipile Dashboard → Webhooks bölümüne yapıştırın
                                         </p>
                                     </div>
+                                    {/* QR ile Instagram Bağla */}
+                                    <div style={{ marginBottom: 14, padding: '12px 14px', borderRadius: 'var(--radius-md)', background: 'rgba(225,48,108,0.08)', border: '1px dashed rgba(225,48,108,0.3)' }}>
+                                        <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>
+                                            Unipile ile Instagram Bağla
+                                        </p>
+                                        <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 }}>
+                                            Instagram hesabınızı Unipile üzerinden bağlayın. Önce yukarıdaki API Key ve DSN URL'yi kaydedin.
+                                        </p>
+                                        <button className="btn btn-sm" disabled={saving || !igUnipileForm.api_key || !igUnipileForm.dsn_url}
+                                            style={{ background: 'linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888)', color: '#fff', border: 'none' }}
+                                            onClick={async () => {
+                                                setSaving(true);
+                                                try {
+                                                    await integrationsAPI.save(igUnipileForm);
+                                                    const res = await integrationsAPI.unipileConnect('INSTAGRAM');
+                                                    if (res.data.url) {
+                                                        window.open(res.data.url, '_blank');
+                                                        setTestResult({ success: true, message: 'Instagram bağlantı sayfası açıldı!' });
+                                                    } else {
+                                                        setTestResult({ success: false, message: 'Bağlantı URL\'si alınamadı' });
+                                                    }
+                                                } catch (err) {
+                                                    setTestResult({ success: false, message: 'Bağlantı hatası: ' + (err.response?.data?.error || err.message) });
+                                                } finally { setSaving(false); }
+                                            }}>
+                                            <Instagram size={14} /> Hesap Bağla
+                                        </button>
+                                    </div>
                                 </>
                             )}
 
@@ -450,6 +478,35 @@ export default function SettingsPage() {
                                         <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
                                             Bu URL'yi Unipile Dashboard → Webhooks bölümüne yapıştırın
                                         </p>
+                                    </div>
+                                    {/* QR ile WhatsApp Bağla */}
+                                    <div style={{ marginBottom: 14, padding: '12px 14px', borderRadius: 'var(--radius-md)', background: 'rgba(37,211,102,0.08)', border: '1px dashed rgba(37,211,102,0.3)' }}>
+                                        <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>
+                                            QR Kod ile WhatsApp Bağla
+                                        </p>
+                                        <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 }}>
+                                            Kişisel WhatsApp numaranızı QR kod okutarak bağlayın. Önce yukarıdaki API Key ve DSN URL'yi kaydedin.
+                                        </p>
+                                        <button className="btn btn-sm" disabled={saving || !waUnipileForm.api_key || !waUnipileForm.dsn_url}
+                                            style={{ background: '#25D366', color: '#fff', border: 'none' }}
+                                            onClick={async () => {
+                                                setSaving(true);
+                                                try {
+                                                    // Önce formu kaydet
+                                                    await integrationsAPI.save(waUnipileForm);
+                                                    const res = await integrationsAPI.unipileConnect('WHATSAPP');
+                                                    if (res.data.url) {
+                                                        window.open(res.data.url, '_blank');
+                                                        setTestResult({ success: true, message: 'QR kod sayfası açıldı! Tarayıcıda WhatsApp QR kodunu okutun.' });
+                                                    } else {
+                                                        setTestResult({ success: false, message: 'Bağlantı URL\'si alınamadı' });
+                                                    }
+                                                } catch (err) {
+                                                    setTestResult({ success: false, message: 'QR bağlantı hatası: ' + (err.response?.data?.error || err.message) });
+                                                } finally { setSaving(false); }
+                                            }}>
+                                            <Phone size={14} /> QR ile Bağla
+                                        </button>
                                     </div>
                                 </>
                             )}

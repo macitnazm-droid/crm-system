@@ -195,4 +195,111 @@ router.post('/test', authMiddleware, async (req, res) => {
     }
 });
 
+// POST /api/integrations/unipile-connect — Unipile hosted auth link oluştur (QR kod sayfası)
+router.post('/unipile-connect', authMiddleware, adminOnly, async (req, res) => {
+    try {
+        const db = req.app.locals.db;
+        const companyId = req.user.company_id;
+        const { provider_type } = req.body; // 'WHATSAPP' veya 'INSTAGRAM'
+
+        // Unipile API key ve DSN URL'yi bul
+        const settings = db.prepare(
+            "SELECT api_key, dsn_url FROM integration_settings WHERE company_id = ? AND provider = 'unipile' AND api_key != '' AND dsn_url != '' LIMIT 1"
+        ).get(companyId);
+
+        if (!settings) {
+            return res.status(400).json({ error: 'Önce Unipile API Key ve DSN URL kaydedin' });
+        }
+
+        const fetch = (await import('node-fetch')).default;
+        const dsn = settings.dsn_url.startsWith('http') ? settings.dsn_url.replace(/\/$/, '') : `https://${settings.dsn_url.replace(/\/$/, '')}`;
+
+        // Unipile hosted auth link oluştur
+        const response = await fetch(`${dsn}/api/v1/hosted/accounts/link`, {
+            method: 'POST',
+            headers: {
+                'X-API-KEY': settings.api_key,
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                type: provider_type || 'WHATSAPP',
+                // Bağlantı sonrası yönlendirme
+                success_redirect_url: `${req.protocol}://${req.get('host')}/settings?connected=true`,
+                failure_redirect_url: `${req.protocol}://${req.get('host')}/settings?connected=false`,
+            })
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            console.error('Unipile connect error:', response.status, errText);
+            return res.status(response.status).json({ error: `Unipile hatası: ${errText}` });
+        }
+
+        const data = await response.json();
+        console.log('Unipile hosted link:', JSON.stringify(data).substring(0, 500));
+
+        // Unipile genelde { url: "https://..." } döndürür
+        const authUrl = data.url || data.link || data.hosted_link || data.auth_url;
+        if (!authUrl) {
+            return res.status(500).json({ error: 'Unipile bağlantı URL\'si alınamadı', raw: data });
+        }
+
+        res.json({ url: authUrl });
+    } catch (err) {
+        console.error('Unipile connect error:', err);
+        res.status(500).json({ error: 'Bağlantı oluşturulurken hata: ' + err.message });
+    }
+});
+
+// POST /api/integrations/unipile-reconnect — Mevcut hesabı yeniden bağla
+router.post('/unipile-reconnect', authMiddleware, adminOnly, async (req, res) => {
+    try {
+        const db = req.app.locals.db;
+        const companyId = req.user.company_id;
+        const { account_id } = req.body;
+
+        if (!account_id) {
+            return res.status(400).json({ error: 'account_id gerekli' });
+        }
+
+        const settings = db.prepare(
+            "SELECT api_key, dsn_url FROM integration_settings WHERE company_id = ? AND provider = 'unipile' AND api_key != '' AND dsn_url != '' LIMIT 1"
+        ).get(companyId);
+
+        if (!settings) {
+            return res.status(400).json({ error: 'Önce Unipile API Key ve DSN URL kaydedin' });
+        }
+
+        const fetch = (await import('node-fetch')).default;
+        const dsn = settings.dsn_url.startsWith('http') ? settings.dsn_url.replace(/\/$/, '') : `https://${settings.dsn_url.replace(/\/$/, '')}`;
+
+        const response = await fetch(`${dsn}/api/v1/hosted/accounts/${account_id}/reconnect`, {
+            method: 'POST',
+            headers: {
+                'X-API-KEY': settings.api_key,
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                success_redirect_url: `${req.protocol}://${req.get('host')}/settings?reconnected=true`,
+                failure_redirect_url: `${req.protocol}://${req.get('host')}/settings?reconnected=false`,
+            })
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            return res.status(response.status).json({ error: `Unipile hatası: ${errText}` });
+        }
+
+        const data = await response.json();
+        const authUrl = data.url || data.link || data.hosted_link || data.auth_url;
+
+        res.json({ url: authUrl || null, raw: data });
+    } catch (err) {
+        console.error('Unipile reconnect error:', err);
+        res.status(500).json({ error: 'Yeniden bağlantı hatası: ' + err.message });
+    }
+});
+
 module.exports = router;

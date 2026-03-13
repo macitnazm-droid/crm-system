@@ -92,6 +92,8 @@ export const integrationsAPI = {
     save: (data) => api.post('/integrations', data),
     test: (platform, provider) => api.post('/integrations/test', { platform, provider }),
     unipileAccounts: () => api.get('/integrations/unipile-accounts'),
+    unipileConnect: (providerType) => api.post('/integrations/unipile-connect', { provider_type: providerType }),
+    unipileReconnect: (accountId) => api.post('/integrations/unipile-reconnect', { account_id: accountId }),
 };
 
 // Appointments
