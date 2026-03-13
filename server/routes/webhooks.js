@@ -349,7 +349,84 @@ router.post('/simulate', async (req, res) => {
 });
 
 // Gelen mesajı işle
+// Lazy migration: CHECK constraint'e messenger ekle (bir kez çalışır)
+let _messengerMigrationDone = false;
+function ensureMessengerSupport(db) {
+    if (_messengerMigrationDone) return;
+    try {
+        const msgSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='messages'").get();
+        if (msgSql && !msgSql.sql.includes('messenger')) {
+            console.log('🔧 [LAZY] Messages tablosu messenger desteği ekleniyor...');
+            db.pragma('foreign_keys = OFF');
+            db.exec('DROP TABLE IF EXISTS messages_old');
+            const oldCols = db.prepare('PRAGMA table_info(messages)').all().map(c => c.name);
+            db.exec('ALTER TABLE messages RENAME TO messages_old');
+            db.exec(`CREATE TABLE messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                company_id INTEGER REFERENCES companies(id),
+                conversation_id INTEGER NOT NULL REFERENCES conversations(id),
+                customer_id INTEGER NOT NULL REFERENCES customers(id),
+                user_id INTEGER REFERENCES users(id),
+                content TEXT NOT NULL,
+                source TEXT DEFAULT 'instagram' CHECK(source IN ('instagram', 'whatsapp', 'messenger', 'api', 'manual')),
+                direction TEXT NOT NULL CHECK(direction IN ('inbound', 'outbound')),
+                is_ai_generated INTEGER DEFAULT 0,
+                ai_model TEXT,
+                is_manual_override INTEGER DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )`);
+            const newCols = db.prepare('PRAGMA table_info(messages)').all().map(c => c.name);
+            const common = oldCols.filter(c => newCols.includes(c)).join(', ');
+            db.exec(`INSERT INTO messages (${common}) SELECT ${common} FROM messages_old`);
+            db.exec('DROP TABLE messages_old');
+            db.pragma('foreign_keys = ON');
+            console.log('✅ [LAZY] Messages tablosu messenger desteği eklendi!');
+        }
+
+        const custSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='customers'").get();
+        if (custSql && !custSql.sql.includes('messenger_id')) {
+            console.log('🔧 [LAZY] Customers tablosu messenger desteği ekleniyor...');
+            db.pragma('foreign_keys = OFF');
+            db.exec('DROP TABLE IF EXISTS customers_old');
+            const cols = db.prepare('PRAGMA table_info(customers)').all();
+            db.exec('ALTER TABLE customers RENAME TO customers_old');
+            db.exec(`CREATE TABLE customers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                company_id INTEGER NOT NULL REFERENCES companies(id),
+                name TEXT NOT NULL,
+                email TEXT,
+                phone TEXT,
+                instagram_id TEXT,
+                whatsapp_id TEXT,
+                messenger_id TEXT,
+                source TEXT DEFAULT 'instagram' CHECK(source IN ('instagram', 'whatsapp', 'messenger', 'api', 'manual')),
+                notes TEXT,
+                last_message_at DATETIME,
+                unipile_chat_id TEXT DEFAULT '',
+                profile_pic TEXT DEFAULT '',
+                instagram_username TEXT DEFAULT '',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )`);
+            const newCols = db.prepare('PRAGMA table_info(customers)').all().map(c => c.name);
+            const common = cols.map(c => c.name).filter(c => newCols.includes(c)).join(', ');
+            db.exec(`INSERT INTO customers (${common}) SELECT ${common} FROM customers_old`);
+            db.exec('DROP TABLE customers_old');
+            db.pragma('foreign_keys = ON');
+            console.log('✅ [LAZY] Customers tablosu messenger desteği eklendi!');
+        }
+
+        _messengerMigrationDone = true;
+        console.log('✅ [LAZY] Messenger migration kontrolü tamamlandı');
+    } catch (err) {
+        console.error('❌ [LAZY] Migration error:', err.message);
+    }
+}
+
 async function processIncomingMessage(db, io, data) {
+    // Her mesaj geldiğinde messenger desteğini kontrol et (sadece ilk seferde çalışır)
+    ensureMessengerSupport(db);
+
     const { company_id, platform_id, content, source, customer_name, phone, instagram_id, unipile_chat_id, profile_pic, username } = data;
     const now = new Date().toISOString();
 
