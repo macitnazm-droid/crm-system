@@ -1,5 +1,6 @@
 const express = require('express');
 const { aiService } = require('../services/aiService');
+const { isDuplicate } = require('../services/messageDedup');
 
 const router = express.Router();
 
@@ -133,6 +134,30 @@ router.post('/simulate', async (req, res) => {
 async function processIncomingMessage(db, io, data) {
     const { company_id, platform_id, content, source, customer_name, phone, instagram_id, unipile_chat_id } = data;
     const now = new Date().toISOString();
+
+    // Duplikasyon kontrolü: Aynı müşteriden, aynı içerikle, son 60 saniye içinde mesaj var mı?
+    const sixtySecsAgo = new Date(Date.now() - 60 * 1000).toISOString();
+    let existingMsg;
+    if (source === 'instagram') {
+        existingMsg = db.prepare(`
+            SELECT m.id FROM messages m
+            JOIN customers c ON m.customer_id = c.id
+            WHERE c.instagram_id = ? AND c.company_id = ? AND m.content = ? AND m.direction = 'inbound' AND m.created_at > ?
+            LIMIT 1
+        `).get(platform_id, company_id, content, sixtySecsAgo);
+    } else if (source === 'whatsapp') {
+        existingMsg = db.prepare(`
+            SELECT m.id FROM messages m
+            JOIN customers c ON m.customer_id = c.id
+            WHERE c.whatsapp_id = ? AND c.company_id = ? AND m.content = ? AND m.direction = 'inbound' AND m.created_at > ?
+            LIMIT 1
+        `).get(platform_id, company_id, content, sixtySecsAgo);
+    }
+
+    if (existingMsg) {
+        console.log(`⏭ Duplike mesaj atlandı (DB): "${content.substring(0, 50)}" (msg_id: ${existingMsg.id})`);
+        return null;
+    }
 
     // 1. Müşteriyi bul veya oluştur
     let customer;
@@ -296,9 +321,6 @@ router.post('/unipile/debug', (req, res) => {
     res.status(200).json({ status: 'ok', received: req.body });
 });
 
-// Webhook message deduplication (son 500 mesaj ID'si)
-const processedWebhookMsgIds = new Set();
-
 // POST /api/webhooks/unipile/:companyId — Unipile webhook
 router.post('/unipile/:companyId', async (req, res) => {
     try {
@@ -312,17 +334,10 @@ router.post('/unipile/:companyId', async (req, res) => {
 
         const body = req.body;
 
-        // Duplicate webhook kontrolü (aynı mesaj birden fazla webhook'tan gelebilir)
+        // Duplicate webhook kontrolü (paylaşımlı dedup — poller ile ortak)
         const msgId = body.message_id;
-        if (msgId) {
-            if (processedWebhookMsgIds.has(msgId)) {
-                return res.status(200).json({ status: 'ok', note: 'duplicate' });
-            }
-            processedWebhookMsgIds.add(msgId);
-            if (processedWebhookMsgIds.size > 500) {
-                const arr = [...processedWebhookMsgIds];
-                arr.slice(0, 200).forEach(id => processedWebhookMsgIds.delete(id));
-            }
+        if (msgId && isDuplicate(msgId)) {
+            return res.status(200).json({ status: 'ok', note: 'duplicate' });
         }
 
         // Her webhook'u tam logla

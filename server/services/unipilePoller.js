@@ -1,8 +1,8 @@
 const { processIncomingMessage } = require('../routes/webhooks');
+const { isDuplicate } = require('./messageDedup');
 
-// Her entegrasyon için son kontrol zamanını ve işlenmiş mesaj ID'lerini tut
+// Her entegrasyon için son kontrol zamanını tut
 const lastPolledAt = new Map();   // key: `${companyId}_${integId}` -> ISO string
-const processedMsgIds = new Set(); // Tekrar işlemeyi önle
 
 async function startPolling(db, io, intervalMs = 30000) {
     console.log('🔄 Unipile polling başlatıldı (her 30s)');
@@ -86,10 +86,9 @@ async function pollIntegration(db, io, integration) {
             // Sadece gelen mesajlar
             if (msg.is_sender === true || msg.is_sender === 1) continue;
 
-            // Tekrar işleme
+            // Tekrar işleme (webhook ile paylaşımlı dedup)
             const msgId = msg.id;
-            if (msgId && processedMsgIds.has(msgId)) continue;
-            if (msgId) processedMsgIds.add(msgId);
+            if (isDuplicate(msgId)) continue;
 
             const senderId = msg.sender_id || msg.from_id || msg.attendee_id
                 || chat.attendee_id || chat.from_id;
@@ -127,11 +126,7 @@ async function pollIntegration(db, io, integration) {
     // Son kontrol zamanını güncelle
     lastPolledAt.set(key, nowIso);
 
-    // processedMsgIds çok büyümesin (son 5000 ID tut)
-    if (processedMsgIds.size > 5000) {
-        const arr = [...processedMsgIds];
-        arr.slice(0, 1000).forEach(id => processedMsgIds.delete(id));
-    }
+    // Dedup temizliği artık messageDedup modülünde yapılıyor
 }
 
 module.exports = { startPolling };
