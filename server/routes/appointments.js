@@ -61,20 +61,20 @@ router.get('/', authMiddleware, (req, res) => {
 router.get('/notification-settings', authMiddleware, (req, res) => {
     try {
         const db = req.app.locals.db;
-        const settings = db.prepare(
-            'SELECT appointment_whatsapp_notify, appointment_sms_notify, sms_provider, sms_usercode, sms_password, sms_msgheader, appointment_reminder_minutes FROM companies WHERE id = ?'
-        ).get(req.user.company_id);
+        // Güvenli sorgu — sütun yoksa hata vermez
+        const company = db.prepare('SELECT * FROM companies WHERE id = ?').get(req.user.company_id);
         res.json({
-            appointment_whatsapp_notify: settings?.appointment_whatsapp_notify || 0,
-            appointment_sms_notify: settings?.appointment_sms_notify || 0,
-            sms_provider: settings?.sms_provider || 'netgsm',
-            sms_usercode: settings?.sms_usercode || '',
-            sms_password: settings?.sms_password ? '••••••' : '',
-            sms_msgheader: settings?.sms_msgheader || '',
-            appointment_reminder_minutes: settings?.appointment_reminder_minutes || 60,
+            appointment_whatsapp_notify: company?.appointment_whatsapp_notify || 0,
+            appointment_sms_notify: company?.appointment_sms_notify || 0,
+            sms_provider: company?.sms_provider || 'netgsm',
+            sms_usercode: company?.sms_usercode || '',
+            sms_password: company?.sms_password ? '••••••' : '',
+            sms_msgheader: company?.sms_msgheader || '',
+            appointment_reminder_minutes: company?.appointment_reminder_minutes || 60,
         });
     } catch (err) {
-        res.status(500).json({ error: 'Ayarlar yüklenirken hata' });
+        console.error('Notification settings GET error:', err.message);
+        res.status(500).json({ error: 'Ayarlar yüklenirken hata: ' + err.message });
     }
 });
 
@@ -102,8 +102,8 @@ router.patch('/notification-settings', authMiddleware, adminOnly, (req, res) => 
 
         res.json({ success: true });
     } catch (err) {
-        console.error('Notification settings update error:', err);
-        res.status(500).json({ error: 'Ayarlar güncellenirken hata' });
+        console.error('Notification settings update error:', err.message, err.code);
+        res.status(500).json({ error: 'Ayarlar güncellenirken hata: ' + err.message });
     }
 });
 

@@ -569,8 +569,12 @@ async function processIncomingMessage(db, io, data) {
                 apptContext += `\nBugün (${today}) dolu saatler: ` + (todayAppts.length > 0 ? todayAppts.map(a => `${a.start_time}-${a.end_time}`).join(', ') : 'Boş');
                 apptContext += `\nYarın (${tomorrow}) dolu saatler: ` + (tomorrowAppts.length > 0 ? tomorrowAppts.map(a => `${a.start_time}-${a.end_time}`).join(', ') : 'Boş');
                 apptContext += '\nÇalışma saatleri: 09:00-19:00';
-                apptContext += '\n\nMüşteri randevu almak isterse müsait saatleri öner. Müşteri onaylarsa yanıtının sonuna şu formatta ekle: [RANDEVU: tarih=YYYY-MM-DD, saat=HH:MM, hizmet=Hizmet Adı, personel=Personel Adı]';
-                apptContext += '\nÖrnek: [RANDEVU: tarih=2026-03-15, saat=14:00, hizmet=Manikür, personel=Büşra]';
+                apptContext += '\n\nÖNEMLİ KURALLAR:';
+                apptContext += '\n- [RANDEVU: ...] tag\'ını SADECE müşteri açıkça yeni bir randevu talep ettiğinde ve tarih+saat netleştiğinde ekle.';
+                apptContext += '\n- Müşteri "teşekkür", "tamam", "görüşürüz" gibi kapanış mesajları gönderiyorsa ASLA randevu tag\'ı ekleme.';
+                apptContext += '\n- Zaten oluşturulmuş bir randevuyu tekrar oluşturma.';
+                apptContext += '\n- Tag formatı: [RANDEVU: tarih=YYYY-MM-DD, saat=HH:MM, hizmet=Hizmet Adı, personel=Personel Adı]';
+                apptContext += '\n- Örnek: [RANDEVU: tarih=2026-03-15, saat=14:00, hizmet=Manikür, personel=Büşra]';
                 apptContext += '\n--- RANDEVU SİSTEMİ BİLGİLERİ SONU ---';
 
                 systemPrompt += apptContext;
@@ -605,9 +609,8 @@ async function processIncomingMessage(db, io, data) {
 
                 if (conflictQuery) {
                     console.log(`⚠️ AI randevu çakışması: ${apptDate} ${apptTime} zaten dolu, atlanıyor`);
-                    // Tag'ı temizle ama randevu oluşturma
+                    // Tag'ı sessizce temizle — AI yanıtına müdahale etme
                     aiResponse.content = aiResponse.content.replace(/\s*\[RANDEVU:[^\]]+\]/, '').trim();
-                    aiResponse.content += '\n\nMaalesef bu saat dolu görünüyor, başka bir saat önerebilir miyim?';
                 } else {
                     db.pragma('foreign_keys = OFF');
                     db.prepare(`

@@ -971,7 +971,7 @@ export default function SettingsPage() {
                                 </div>
                                 <label className="toggle-switch">
                                     <input type="checkbox" checked={!!notifySettings[p.key]}
-                                        disabled={user?.role !== 'admin'}
+                                        disabled={user?.role !== 'admin' && user?.role !== 'super_admin'}
                                         onChange={async (e) => {
                                             const val = e.target.checked ? 1 : 0;
                                             setNotifySettings(prev => ({ ...prev, [p.key]: val }));
@@ -995,7 +995,7 @@ export default function SettingsPage() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             <select className="form-input" style={{ width: 180 }}
                                 value={notifySettings.appointment_reminder_minutes}
-                                disabled={user?.role !== 'admin'}
+                                disabled={user?.role !== 'admin' && user?.role !== 'super_admin'}
                                 onChange={async (e) => {
                                     const val = parseInt(e.target.value);
                                     setNotifySettings(prev => ({ ...prev, appointment_reminder_minutes: val }));
@@ -1029,21 +1029,21 @@ export default function SettingsPage() {
                                     <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Kullanıcı Kodu</label>
                                     <input className="form-input" placeholder="NetGSM kullanıcı kodu"
                                         value={notifySettings.sms_usercode}
-                                        disabled={user?.role !== 'admin'}
+                                        disabled={user?.role !== 'admin' && user?.role !== 'super_admin'}
                                         onChange={(e) => setNotifySettings(prev => ({ ...prev, sms_usercode: e.target.value }))} />
                                 </div>
                                 <div>
                                     <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Şifre</label>
                                     <input className="form-input" type="password" placeholder="NetGSM şifre"
                                         value={notifySettings.sms_password}
-                                        disabled={user?.role !== 'admin'}
+                                        disabled={user?.role !== 'admin' && user?.role !== 'super_admin'}
                                         onChange={(e) => setNotifySettings(prev => ({ ...prev, sms_password: e.target.value }))} />
                                 </div>
                                 <div>
                                     <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Mesaj Başlığı</label>
                                     <input className="form-input" placeholder="SMS gönderici adı"
                                         value={notifySettings.sms_msgheader}
-                                        disabled={user?.role !== 'admin'}
+                                        disabled={user?.role !== 'admin' && user?.role !== 'super_admin'}
                                         onChange={(e) => setNotifySettings(prev => ({ ...prev, sms_msgheader: e.target.value }))} />
                                 </div>
                             </div>
