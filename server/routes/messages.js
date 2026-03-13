@@ -1,5 +1,6 @@
 const express = require('express');
 const { authMiddleware } = require('../middleware/auth');
+const { sendOutboundMessage } = require('../services/metaService');
 
 const router = express.Router();
 
@@ -82,33 +83,24 @@ router.post('/send', authMiddleware, async (req, res) => {
         // Real-time broadcast (Sadece aynı şirkete)
         io.to(`company:${companyId}`).emit('message:new', { message, conversation_id });
 
-        // Unipile üzerinden gerçek mesaj gönder
+        // Provider'a göre mesajı gönder (Meta veya Unipile)
         try {
             const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(conversation.customer_id);
-            const integration = db.prepare(
-                "SELECT * FROM integration_settings WHERE company_id = ? AND platform = ? AND provider = 'unipile' AND is_active = 1"
-            ).get(companyId, conversation.customer_source || 'instagram');
-
-            if (integration && customer?.unipile_chat_id) {
-                const fetch = (await import('node-fetch')).default;
-                const dsn = integration.dsn_url.startsWith('http')
-                    ? integration.dsn_url.replace(/\/$/, '')
-                    : `https://${integration.dsn_url.replace(/\/$/, '')}`;
-
-                const sendRes = await fetch(`${dsn}/api/v1/chats/${customer.unipile_chat_id}/messages`, {
-                    method: 'POST',
-                    headers: { 'X-API-KEY': integration.api_key, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: content })
-                });
-
-                if (!sendRes.ok) {
-                    console.warn(`Unipile mesaj gönderme hatası: ${sendRes.status}`);
-                } else {
-                    console.log(`📤 Unipile'a mesaj gönderildi: "${content.substring(0, 50)}"`);
-                }
+            const source = conversation.customer_source || 'instagram';
+            const sendResult = await sendOutboundMessage(db, {
+                companyId,
+                source,
+                recipientId: customer?.instagram_id || customer?.whatsapp_id,
+                recipientPhone: customer?.phone || customer?.whatsapp_id,
+                text: content
+            });
+            if (sendResult.sent) {
+                console.log(`📤 Mesaj gönderildi (${sendResult.provider}): "${content.substring(0, 50)}"`);
+            } else {
+                console.warn(`Mesaj gönderilemedi: ${sendResult.reason}`);
             }
-        } catch (unipileErr) {
-            console.error('Unipile outbound hatası:', unipileErr.message);
+        } catch (outboundErr) {
+            console.error('Outbound mesaj hatası:', outboundErr.message);
         }
 
         res.json({ message });

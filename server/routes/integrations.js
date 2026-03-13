@@ -152,7 +152,18 @@ router.post('/test', authMiddleware, async (req, res) => {
         }
 
         if (!settings.api_key) {
-            return res.json({ success: false, message: 'API anahtarı girilmemiş' });
+            return res.json({ success: false, message: 'API anahtarı / Access Token girilmemiş' });
+        }
+
+        // Meta Graph API bağlantı testi
+        if (settings.provider === 'meta') {
+            try {
+                const { verifyToken } = require('../services/metaService');
+                const result = await verifyToken(settings.api_key);
+                return res.json({ success: result.valid, message: result.message });
+            } catch (fetchErr) {
+                return res.json({ success: false, message: `Meta API bağlantı hatası: ${fetchErr.message}` });
+            }
         }
 
         // Unipile gerçek bağlantı testi
@@ -176,12 +187,7 @@ router.post('/test', authMiddleware, async (req, res) => {
             }
         }
 
-        // Meta / varsayılan
-        res.json({
-            success: true,
-            message: `${platform === 'instagram' ? 'Instagram' : 'WhatsApp'} bağlantı bilgileri kaydedildi. Webhook URL'nizi ${settings.provider === 'unipile' ? 'Unipile Dashboard' : 'Meta Developer Dashboard'}'da yapılandırın.`,
-            webhook_url: settings.webhook_url,
-        });
+        res.json({ success: false, message: 'Bilinmeyen provider' });
     } catch (err) {
         console.error('Test integration error:', err);
         res.status(500).json({ success: false, message: 'Test sırasında hata oluştu' });

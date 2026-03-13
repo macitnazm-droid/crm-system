@@ -1,82 +1,163 @@
 const express = require('express');
 const { aiService } = require('../services/aiService');
 const { isDuplicate } = require('../services/messageDedup');
+const { sendOutboundMessage } = require('../services/metaService');
 
 const router = express.Router();
 
-// POST /api/webhooks/instagram — Instagram webhook
+// POST /api/webhooks/instagram — Meta Graph API Instagram webhook
 router.post('/instagram', async (req, res) => {
     try {
         const db = req.app.locals.db;
         const io = req.app.locals.io;
-        const { entry } = req.body;
+        const body = req.body;
 
-        if (entry) {
-            for (const e of entry) {
+        console.log('📩 Instagram webhook:', JSON.stringify(body).substring(0, 1000));
+
+        // Meta Webhook format: { object: "instagram", entry: [...] }
+        if (body.object === 'instagram' && body.entry) {
+            for (const e of body.entry) {
                 const pageId = e.id;
-                // Bu PageID hangi şirkete ait bul
-                const integration = db.prepare('SELECT company_id FROM integration_settings WHERE platform = ? AND page_id = ? AND is_active = 1').get('instagram', pageId);
 
-                if (!integration) continue;
+                // page_id ile şirketi bul (provider'a bakma — Meta webhook sadece Meta'dan gelir)
+                const integration = db.prepare(
+                    "SELECT * FROM integration_settings WHERE platform = 'instagram' AND provider = 'meta' AND page_id = ? AND is_active = 1"
+                ).get(pageId);
 
-                const messaging = e.messaging || e.changes || [];
+                if (!integration) {
+                    // Fallback: page_id olmadan Meta provider'lı herhangi bir Instagram entegrasyonu
+                    const fallback = db.prepare(
+                        "SELECT * FROM integration_settings WHERE platform = 'instagram' AND provider = 'meta' AND is_active = 1 LIMIT 1"
+                    ).get();
+                    if (!fallback) {
+                        console.warn(`Instagram webhook: page_id=${pageId} için aktif Meta entegrasyonu bulunamadı`);
+                        continue;
+                    }
+                    // page_id'yi otomatik kaydet
+                    db.prepare('UPDATE integration_settings SET page_id = ? WHERE id = ?').run(pageId, fallback.id);
+                    console.log(`📝 page_id=${pageId} otomatik kaydedildi (integration:${fallback.id})`);
+                }
+
+                const companyId = (integration || db.prepare("SELECT * FROM integration_settings WHERE platform = 'instagram' AND provider = 'meta' AND is_active = 1 LIMIT 1").get())?.company_id;
+                if (!companyId) continue;
+
+                // Instagram Messaging webhook: entry[].messaging[]
+                const messaging = e.messaging || [];
                 for (const event of messaging) {
-                    const senderId = event.sender?.id || event.value?.from;
-                    const messageText = event.message?.text || event.value?.text;
+                    // Echo kontrolü — kendi gönderdiğimiz mesajları atla
+                    if (event.message?.is_echo) {
+                        console.log('⏭ Instagram echo mesaj, atlanıyor');
+                        continue;
+                    }
+
+                    const senderId = event.sender?.id;
+                    const messageText = event.message?.text;
 
                     if (senderId && messageText) {
+                        console.log(`📨 Meta IG: ${senderId} → "${messageText.substring(0, 60)}"`);
                         await processIncomingMessage(db, io, {
-                            company_id: integration.company_id,
+                            company_id: companyId,
                             platform_id: senderId,
                             content: messageText,
                             source: 'instagram'
                         });
                     }
                 }
+
+                // Instagram changes formatı (bazı durumlarda)
+                const changes = e.changes || [];
+                for (const change of changes) {
+                    if (change.field === 'messages' && change.value) {
+                        const senderId = change.value.from?.id || change.value.sender?.id;
+                        const messageText = change.value.message?.text || change.value.text;
+                        if (senderId && messageText) {
+                            await processIncomingMessage(db, io, {
+                                company_id: companyId,
+                                platform_id: senderId,
+                                content: messageText,
+                                source: 'instagram'
+                            });
+                        }
+                    }
+                }
             }
         }
 
+        // Meta her zaman 200 bekler, aksi halde tekrar dener
         res.status(200).json({ status: 'ok' });
     } catch (err) {
         console.error('Instagram webhook error:', err);
-        res.status(500).json({ error: 'Webhook işlenirken hata oluştu' });
+        res.status(200).json({ status: 'error handled' });
     }
 });
 
-// GET /api/webhooks/instagram — Webhook doğrulama
+// GET /api/webhooks/instagram — Meta Webhook doğrulama
 router.get('/instagram', (req, res) => {
-    const verifyToken = process.env.INSTAGRAM_VERIFY_TOKEN || 'instagram_webhook_verify_token';
-    if (req.query['hub.verify_token'] === verifyToken) {
+    const db = req.app.locals.db;
+    // Önce DB'deki verify_token'ı dene
+    const integration = db.prepare(
+        "SELECT verify_token FROM integration_settings WHERE platform = 'instagram' AND provider = 'meta' AND is_active = 1 AND verify_token != '' LIMIT 1"
+    ).get();
+    const verifyToken = integration?.verify_token || process.env.INSTAGRAM_VERIFY_TOKEN || 'instagram_webhook_verify_token';
+
+    if (req.query['hub.verify_token'] === verifyToken && req.query['hub.challenge']) {
+        console.log('✅ Instagram webhook doğrulandı');
         res.send(req.query['hub.challenge']);
     } else {
+        console.warn(`❌ Instagram webhook doğrulama başarısız: beklenen="${verifyToken}", gelen="${req.query['hub.verify_token']}"`);
         res.status(403).send('Token geçersiz');
     }
 });
 
-// POST /api/webhooks/whatsapp — WhatsApp webhook
+// POST /api/webhooks/whatsapp — Meta Cloud API WhatsApp webhook
 router.post('/whatsapp', async (req, res) => {
     try {
         const db = req.app.locals.db;
         const io = req.app.locals.io;
-        const { entry } = req.body;
+        const body = req.body;
 
-        if (entry) {
-            for (const e of entry) {
+        console.log('📩 WhatsApp webhook:', JSON.stringify(body).substring(0, 1000));
+
+        if (body.entry) {
+            for (const e of body.entry) {
                 const changes = e.changes || [];
                 for (const change of changes) {
+                    if (change.field !== 'messages') continue;
+
                     const phoneNumberId = change.value?.metadata?.phone_number_id;
-                    const integration = db.prepare('SELECT company_id FROM integration_settings WHERE platform = ? AND phone_number_id = ? AND is_active = 1').get('whatsapp', phoneNumberId);
+                    const integration = db.prepare(
+                        "SELECT * FROM integration_settings WHERE platform = 'whatsapp' AND provider = 'meta' AND phone_number_id = ? AND is_active = 1"
+                    ).get(phoneNumberId);
 
-                    if (!integration) continue;
+                    if (!integration) {
+                        // Fallback
+                        const fallback = db.prepare(
+                            "SELECT * FROM integration_settings WHERE platform = 'whatsapp' AND provider = 'meta' AND is_active = 1 LIMIT 1"
+                        ).get();
+                        if (fallback && phoneNumberId) {
+                            db.prepare('UPDATE integration_settings SET phone_number_id = ? WHERE id = ?').run(phoneNumberId, fallback.id);
+                        }
+                        if (!fallback) continue;
+                    }
 
+                    const companyId = (integration || db.prepare("SELECT * FROM integration_settings WHERE platform = 'whatsapp' AND provider = 'meta' AND is_active = 1 LIMIT 1").get())?.company_id;
+                    if (!companyId) continue;
+
+                    // Statuses — okundu bilgisi vb, mesaj değil
+                    // Messages — gerçek gelen mesajlar
                     const messages = change.value?.messages || [];
                     for (const msg of messages) {
-                        if (msg.type === 'text') {
+                        if (msg.type === 'text' && msg.text?.body) {
+                            const senderPhone = msg.from; // Uluslararası format: 905551234567
+                            const senderName = change.value?.contacts?.[0]?.profile?.name;
+                            console.log(`📨 Meta WA: ${senderName || senderPhone} → "${msg.text.body.substring(0, 60)}"`);
                             await processIncomingMessage(db, io, {
-                                company_id: integration.company_id,
-                                platform_id: msg.from,
+                                company_id: companyId,
+                                platform_id: senderPhone,
                                 content: msg.text.body,
-                                source: 'whatsapp'
+                                source: 'whatsapp',
+                                customer_name: senderName,
+                                phone: senderPhone
                             });
                         }
                     }
@@ -87,16 +168,23 @@ router.post('/whatsapp', async (req, res) => {
         res.status(200).json({ status: 'ok' });
     } catch (err) {
         console.error('WhatsApp webhook error:', err);
-        res.status(500).json({ error: 'Webhook işlenirken hata oluştu' });
+        res.status(200).json({ status: 'error handled' });
     }
 });
 
-// GET /api/webhooks/whatsapp — Webhook doğrulama
+// GET /api/webhooks/whatsapp — Meta Webhook doğrulama
 router.get('/whatsapp', (req, res) => {
-    const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN || 'whatsapp_webhook_verify_token';
-    if (req.query['hub.verify_token'] === verifyToken) {
+    const db = req.app.locals.db;
+    const integration = db.prepare(
+        "SELECT verify_token FROM integration_settings WHERE platform = 'whatsapp' AND provider = 'meta' AND is_active = 1 AND verify_token != '' LIMIT 1"
+    ).get();
+    const verifyToken = integration?.verify_token || process.env.WHATSAPP_VERIFY_TOKEN || 'whatsapp_webhook_verify_token';
+
+    if (req.query['hub.verify_token'] === verifyToken && req.query['hub.challenge']) {
+        console.log('✅ WhatsApp webhook doğrulandı');
         res.send(req.query['hub.challenge']);
     } else {
+        console.warn(`❌ WhatsApp webhook doğrulama başarısız: beklenen="${verifyToken}", gelen="${req.query['hub.verify_token']}"`);
         res.status(403).send('Token geçersiz');
     }
 });
@@ -239,34 +327,24 @@ async function processIncomingMessage(db, io, data) {
         // Real-time: AI yanıtı bildirimi
         io.to(`company:${company_id}`).emit('message:new', { message: aiMessage, conversation_id: conversation.id });
 
-        // Unipile üzerinden AI yanıtını gönder
+        // AI yanıtını provider'a göre gönder (Meta veya Unipile)
         try {
-            // Her zaman polling'den gelen en güncel chatId'yi kullan
-            const chatIdToUse = unipile_chat_id || customer.unipile_chat_id;
+            // Unipile chat_id güncelle (varsa)
             if (unipile_chat_id && unipile_chat_id !== customer.unipile_chat_id) {
                 db.prepare('UPDATE customers SET unipile_chat_id = ? WHERE id = ?').run(unipile_chat_id, customer.id);
             }
-            const integration = db.prepare(
-                "SELECT * FROM integration_settings WHERE company_id = ? AND platform = ? AND provider = 'unipile' AND is_active = 1"
-            ).get(company_id, source);
-            if (integration && chatIdToUse) {
-                const fetch = (await import('node-fetch')).default;
-                const dsn = integration.dsn_url.startsWith('http')
-                    ? integration.dsn_url.replace(/\/$/, '')
-                    : `https://${integration.dsn_url.replace(/\/$/, '')}`;
-                const sendRes = await fetch(`${dsn}/api/v1/chats/${chatIdToUse}/messages`, {
-                    method: 'POST',
-                    headers: { 'X-API-KEY': integration.api_key, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: aiResponse.content })
-                });
-                if (sendRes.ok) {
-                    console.log(`🤖 AI yanıtı Unipile'a gönderildi: "${aiResponse.content.substring(0, 50)}"`);
-                } else {
-                    console.warn(`Unipile AI outbound hatası: ${sendRes.status}`);
-                }
+            const sendResult = await sendOutboundMessage(db, {
+                companyId: company_id,
+                source,
+                recipientId: platform_id,
+                recipientPhone: customer.phone || platform_id,
+                text: aiResponse.content
+            });
+            if (sendResult.sent) {
+                console.log(`🤖 AI yanıtı gönderildi (${sendResult.provider}): "${aiResponse.content.substring(0, 50)}"`);
             }
-        } catch (unipileErr) {
-            console.error('Unipile AI outbound hatası:', unipileErr.message);
+        } catch (outboundErr) {
+            console.error('AI outbound hatası:', outboundErr.message);
         }
 
         // 5. Müşteriyi kategorize et
