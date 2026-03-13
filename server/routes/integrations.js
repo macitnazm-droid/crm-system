@@ -88,8 +88,9 @@ router.post('/', authMiddleware, adminOnly, (req, res) => {
             return res.status(400).json({ error: 'Geçerli bir platform seçin (instagram/whatsapp)' });
         }
 
-        // Mevcut kayıt var mı kontrol et
-        const existing = db.prepare('SELECT * FROM integration_settings WHERE platform = ? AND company_id = ?').get(platform, companyId);
+        // Mevcut kayıt var mı kontrol et (platform + provider bazlı)
+        const actualProvider = provider || 'meta';
+        const existing = db.prepare('SELECT * FROM integration_settings WHERE platform = ? AND provider = ? AND company_id = ?').get(platform, actualProvider, companyId);
 
         if (existing) {
             // Güncelle
@@ -107,30 +108,27 @@ router.post('/', authMiddleware, adminOnly, (req, res) => {
             if (page_id !== undefined) { updates.push('page_id = ?'); params.push(page_id); }
             if (verify_token !== undefined) { updates.push('verify_token = ?'); params.push(verify_token); }
             if (is_active !== undefined) { updates.push('is_active = ?'); params.push(is_active ? 1 : 0); }
-            if (provider !== undefined) { updates.push('provider = ?'); params.push(provider); }
             if (dsn_url !== undefined) { updates.push('dsn_url = ?'); params.push(dsn_url); }
             if (unipile_account_id !== undefined) { updates.push('unipile_account_id = ?'); params.push(unipile_account_id); }
 
             updates.push('updated_at = ?'); params.push(new Date().toISOString());
 
-            // WHERE clause params
-            params.push(platform);
-            params.push(companyId);
+            params.push(existing.id);
 
             if (updates.length > 1) {
-                db.prepare(`UPDATE integration_settings SET ${updates.join(', ')} WHERE platform = ? AND company_id = ?`).run(...params);
+                db.prepare(`UPDATE integration_settings SET ${updates.join(', ')} WHERE id = ?`).run(...params);
             }
 
-            const updated = db.prepare('SELECT * FROM integration_settings WHERE platform = ? AND company_id = ?').get(platform, companyId);
+            const updated = db.prepare('SELECT * FROM integration_settings WHERE id = ?').get(existing.id);
             res.json({ integration: { ...updated, api_key: updated.api_key ? '••••••••' + updated.api_key.slice(-4) : '', api_secret: updated.api_secret ? '••••••••' + updated.api_secret.slice(-4) : '' } });
         } else {
-            // Yeni kayıt
+            // Yeni kayıt (platform + provider bazlı)
             db.prepare(`
         INSERT INTO integration_settings (company_id, platform, api_key, api_secret, webhook_url, phone_number_id, page_id, verify_token, is_active, provider, dsn_url, unipile_account_id, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(companyId, platform, api_key || '', api_secret || '', webhook_url || '', phone_number_id || '', page_id || '', verify_token || '', is_active ? 1 : 0, provider || 'meta', dsn_url || '', unipile_account_id || '', new Date().toISOString(), new Date().toISOString());
+      `).run(companyId, platform, api_key || '', api_secret || '', webhook_url || '', phone_number_id || '', page_id || '', verify_token || '', is_active ? 1 : 0, actualProvider, dsn_url || '', unipile_account_id || '', new Date().toISOString(), new Date().toISOString());
 
-            const created = db.prepare('SELECT * FROM integration_settings WHERE platform = ? AND company_id = ?').get(platform, companyId);
+            const created = db.prepare('SELECT * FROM integration_settings WHERE platform = ? AND provider = ? AND company_id = ?').get(platform, actualProvider, companyId);
             res.json({ integration: { ...created, api_key: created.api_key ? '••••••••' + created.api_key.slice(-4) : '', api_secret: created.api_secret ? '••••••••' + created.api_secret.slice(-4) : '' } });
         }
     } catch (err) {
@@ -142,10 +140,13 @@ router.post('/', authMiddleware, adminOnly, (req, res) => {
 // POST /api/integrations/test — Bağlantı testi
 router.post('/test', authMiddleware, async (req, res) => {
     try {
-        const { platform } = req.body;
+        const { platform, provider } = req.body;
         const db = req.app.locals.db;
         const companyId = req.user.company_id;
-        const settings = db.prepare('SELECT * FROM integration_settings WHERE platform = ? AND company_id = ?').get(platform, companyId);
+        // Provider belirtilmişse ona göre, yoksa platform'daki aktif olanı bul
+        const settings = provider
+            ? db.prepare('SELECT * FROM integration_settings WHERE platform = ? AND provider = ? AND company_id = ?').get(platform, provider, companyId)
+            : db.prepare('SELECT * FROM integration_settings WHERE platform = ? AND company_id = ? AND is_active = 1').get(platform, companyId);
 
         if (!settings) {
             return res.json({ success: false, message: 'Bu platform için entegrasyon bulunamadı' });

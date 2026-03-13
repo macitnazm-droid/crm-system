@@ -19,9 +19,13 @@ export default function SettingsPage() {
     const [saving, setSaving] = useState(false);
     const [testResult, setTestResult] = useState(null);
 
-    // Integration form state
-    const [igForm, setIgForm] = useState({ platform: 'instagram', provider: 'meta', api_key: '', api_secret: '', page_id: '', webhook_url: '', verify_token: '', dsn_url: '', unipile_account_id: '', is_active: false });
-    const [waForm, setWaForm] = useState({ platform: 'whatsapp', provider: 'meta', api_key: '', api_secret: '', phone_number_id: '', webhook_url: '', verify_token: '', dsn_url: '', unipile_account_id: '', is_active: false });
+    // Integration form state — her provider ayrı form
+    const [igMetaForm, setIgMetaForm] = useState({ platform: 'instagram', provider: 'meta', api_key: '', api_secret: '', page_id: '', verify_token: '', is_active: false });
+    const [igUnipileForm, setIgUnipileForm] = useState({ platform: 'instagram', provider: 'unipile', api_key: '', dsn_url: '', unipile_account_id: '', is_active: false });
+    const [waMetaForm, setWaMetaForm] = useState({ platform: 'whatsapp', provider: 'meta', api_key: '', api_secret: '', phone_number_id: '', verify_token: '', is_active: false });
+    const [waUnipileForm, setWaUnipileForm] = useState({ platform: 'whatsapp', provider: 'unipile', api_key: '', dsn_url: '', unipile_account_id: '', is_active: false });
+    const [igProvider, setIgProvider] = useState('meta');
+    const [waProvider, setWaProvider] = useState('meta');
 
     useEffect(() => { loadData(); }, []);
 
@@ -35,11 +39,16 @@ export default function SettingsPage() {
             const ints = iRes.data.integrations || [];
             setIntegrations(ints);
 
-            // Form'ları mevcut verilerle doldur
-            const ig = ints.find(i => i.platform === 'instagram');
-            if (ig) setIgForm(prev => ({ ...prev, ...ig, api_key: ig.api_key || '', api_secret: ig.api_secret || '', provider: ig.provider || 'meta', dsn_url: ig.dsn_url || '', unipile_account_id: ig.unipile_account_id || '' }));
-            const wa = ints.find(i => i.platform === 'whatsapp');
-            if (wa) setWaForm(prev => ({ ...prev, ...wa, api_key: wa.api_key || '', api_secret: wa.api_secret || '', provider: wa.provider || 'meta', dsn_url: wa.dsn_url || '', unipile_account_id: wa.unipile_account_id || '' }));
+            // Her platform+provider kombinasyonu için form doldur
+            const igMeta = ints.find(i => i.platform === 'instagram' && i.provider === 'meta');
+            const igUni = ints.find(i => i.platform === 'instagram' && i.provider === 'unipile');
+            const waMeta = ints.find(i => i.platform === 'whatsapp' && i.provider === 'meta');
+            const waUni = ints.find(i => i.platform === 'whatsapp' && i.provider === 'unipile');
+
+            if (igMeta) setIgMetaForm(prev => ({ ...prev, api_key: igMeta.api_key || '', api_secret: igMeta.api_secret || '', page_id: igMeta.page_id || '', verify_token: igMeta.verify_token || '', is_active: !!igMeta.is_active }));
+            if (igUni) setIgUnipileForm(prev => ({ ...prev, api_key: igUni.api_key || '', dsn_url: igUni.dsn_url || '', unipile_account_id: igUni.unipile_account_id || '', is_active: !!igUni.is_active }));
+            if (waMeta) setWaMetaForm(prev => ({ ...prev, api_key: waMeta.api_key || '', api_secret: waMeta.api_secret || '', phone_number_id: waMeta.phone_number_id || '', verify_token: waMeta.verify_token || '', is_active: !!waMeta.is_active }));
+            if (waUni) setWaUnipileForm(prev => ({ ...prev, api_key: waUni.api_key || '', dsn_url: waUni.dsn_url || '', unipile_account_id: waUni.unipile_account_id || '', is_active: !!waUni.is_active }));
 
         } catch (err) { console.error(err); }
         finally { setLoading(false); }
@@ -56,10 +65,10 @@ export default function SettingsPage() {
         } finally { setSaving(false); }
     };
 
-    const testConnection = async (platform) => {
+    const testConnection = async (platform, provider) => {
         setSaving(true);
         try {
-            const res = await integrationsAPI.test(platform);
+            const res = await integrationsAPI.test(platform, provider);
             setTestResult(res.data);
         } catch (err) {
             setTestResult({ success: false, message: 'Test hatası' });
@@ -169,59 +178,71 @@ export default function SettingsPage() {
                                 </div>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                {igForm.is_active && (
-                                    <span className="badge" style={{ fontSize: 10, background: igForm.provider === 'meta' ? 'rgba(59,130,246,0.12)' : 'rgba(139,92,246,0.12)', color: igForm.provider === 'meta' ? '#3b82f6' : '#8b5cf6', border: `1px solid ${igForm.provider === 'meta' ? 'rgba(59,130,246,0.3)' : 'rgba(139,92,246,0.3)'}` }}>
-                                        {igForm.provider === 'meta' ? 'Meta' : 'Unipile'}
-                                    </span>
+                                {igMetaForm.is_active && (
+                                    <span className="badge" style={{ fontSize: 10, background: 'rgba(59,130,246,0.12)', color: '#3b82f6', border: '1px solid rgba(59,130,246,0.3)' }}>Meta</span>
                                 )}
-                                <span style={{ fontSize: 12, color: igForm.is_active ? 'var(--success)' : 'var(--text-muted)' }}>{igForm.is_active ? 'Aktif' : 'Pasif'}</span>
-                                <div className={`toggle ${igForm.is_active ? 'active' : ''}`}
-                                    onClick={() => setIgForm(prev => ({ ...prev, is_active: !prev.is_active }))} />
+                                {igUnipileForm.is_active && (
+                                    <span className="badge" style={{ fontSize: 10, background: 'rgba(139,92,246,0.12)', color: '#8b5cf6', border: '1px solid rgba(139,92,246,0.3)' }}>Unipile</span>
+                                )}
+                                {!igMetaForm.is_active && !igUnipileForm.is_active && (
+                                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Pasif</span>
+                                )}
                             </div>
                         </div>
                         <div style={{ padding: 20 }}>
-                            {/* Provider Seçici */}
+                            {/* Provider Seçici Tab */}
                             <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
                                 {['meta', 'unipile'].map(p => (
                                     <button key={p}
-                                        className={`btn btn-sm ${igForm.provider === p ? 'btn-primary' : 'btn-ghost'}`}
-                                        onClick={() => setIgForm(prev => ({ ...prev, provider: p }))}
+                                        className={`btn btn-sm ${igProvider === p ? 'btn-primary' : 'btn-ghost'}`}
+                                        onClick={() => setIgProvider(p)}
                                         style={{ textTransform: 'capitalize', minWidth: 90 }}>
                                         {p === 'meta' ? 'Meta (Resmi)' : 'Unipile'}
                                     </button>
                                 ))}
                             </div>
 
-                            {igForm.provider === 'meta' ? (
+                            {/* Per-provider aktif/pasif toggle */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                                <span style={{ fontSize: 12, color: (igProvider === 'meta' ? igMetaForm.is_active : igUnipileForm.is_active) ? 'var(--success)' : 'var(--text-muted)' }}>
+                                    {igProvider === 'meta' ? 'Meta' : 'Unipile'}: {(igProvider === 'meta' ? igMetaForm.is_active : igUnipileForm.is_active) ? 'Aktif' : 'Pasif'}
+                                </span>
+                                <div className={`toggle ${(igProvider === 'meta' ? igMetaForm.is_active : igUnipileForm.is_active) ? 'active' : ''}`}
+                                    onClick={() => igProvider === 'meta'
+                                        ? setIgMetaForm(prev => ({ ...prev, is_active: !prev.is_active }))
+                                        : setIgUnipileForm(prev => ({ ...prev, is_active: !prev.is_active }))} />
+                            </div>
+
+                            {igProvider === 'meta' ? (
                                 <>
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
                                         <div>
                                             <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
                                                 <Key size={12} /> Access Token
                                             </label>
-                                            <input className="input" type="password" placeholder="Instagram Access Token" value={igForm.api_key}
-                                                onChange={e => setIgForm(prev => ({ ...prev, api_key: e.target.value }))} />
+                                            <input className="input" type="password" placeholder="Instagram Access Token" value={igMetaForm.api_key}
+                                                onChange={e => setIgMetaForm(prev => ({ ...prev, api_key: e.target.value }))} />
                                         </div>
                                         <div>
                                             <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
                                                 <Shield size={12} /> App Secret
                                             </label>
-                                            <input className="input" type="password" placeholder="App Secret" value={igForm.api_secret}
-                                                onChange={e => setIgForm(prev => ({ ...prev, api_secret: e.target.value }))} />
+                                            <input className="input" type="password" placeholder="App Secret" value={igMetaForm.api_secret}
+                                                onChange={e => setIgMetaForm(prev => ({ ...prev, api_secret: e.target.value }))} />
                                         </div>
                                         <div>
                                             <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
                                                 <Globe size={12} /> Page ID
                                             </label>
-                                            <input className="input" placeholder="Facebook Page ID" value={igForm.page_id}
-                                                onChange={e => setIgForm(prev => ({ ...prev, page_id: e.target.value }))} />
+                                            <input className="input" placeholder="Facebook Page ID" value={igMetaForm.page_id}
+                                                onChange={e => setIgMetaForm(prev => ({ ...prev, page_id: e.target.value }))} />
                                         </div>
                                         <div>
                                             <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
                                                 <Shield size={12} /> Verify Token
                                             </label>
-                                            <input className="input" placeholder="Webhook Verify Token" value={igForm.verify_token}
-                                                onChange={e => setIgForm(prev => ({ ...prev, verify_token: e.target.value }))} />
+                                            <input className="input" placeholder="Webhook Verify Token" value={igMetaForm.verify_token}
+                                                onChange={e => setIgMetaForm(prev => ({ ...prev, verify_token: e.target.value }))} />
                                         </div>
                                     </div>
                                     <div style={{ marginBottom: 14 }}>
@@ -246,24 +267,23 @@ export default function SettingsPage() {
                                             <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
                                                 <Key size={12} /> Unipile API Key
                                             </label>
-                                            <input className="input" type="password" placeholder="Unipile API Key" value={igForm.api_key}
-                                                onChange={e => setIgForm(prev => ({ ...prev, api_key: e.target.value }))} />
+                                            <input className="input" type="password" placeholder="Unipile API Key" value={igUnipileForm.api_key}
+                                                onChange={e => setIgUnipileForm(prev => ({ ...prev, api_key: e.target.value }))} />
                                         </div>
                                         <div>
                                             <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
                                                 <Globe size={12} /> DSN URL
                                             </label>
-                                            <input className="input" placeholder="https://api1.unipile.com:13433" value={igForm.dsn_url}
-                                                onChange={e => setIgForm(prev => ({ ...prev, dsn_url: e.target.value }))} />
+                                            <input className="input" placeholder="https://api1.unipile.com:13433" value={igUnipileForm.dsn_url}
+                                                onChange={e => setIgUnipileForm(prev => ({ ...prev, dsn_url: e.target.value }))} />
                                         </div>
                                     </div>
-                                    {/* Unipile Account ID */}
                                     <div style={{ marginBottom: 14 }}>
                                         <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
                                             <Instagram size={18} /> Unipile Account ID
                                         </label>
-                                        <input className="input" placeholder="Unipile Dashboard → Accounts → Account ID" value={igForm.unipile_account_id}
-                                            onChange={e => setIgForm(prev => ({ ...prev, unipile_account_id: e.target.value }))} />
+                                        <input className="input" placeholder="Unipile Dashboard → Accounts → Account ID" value={igUnipileForm.unipile_account_id}
+                                            onChange={e => setIgUnipileForm(prev => ({ ...prev, unipile_account_id: e.target.value }))} />
                                         <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
                                             Unipile Dashboard → Accounts sayfasından Instagram hesabınızın ID'sini kopyalayın
                                         </p>
@@ -283,10 +303,10 @@ export default function SettingsPage() {
                             )}
 
                             <div style={{ display: 'flex', gap: 8 }}>
-                                <button className="btn btn-primary btn-sm" onClick={() => saveIntegration(igForm)} disabled={saving}>
+                                <button className="btn btn-primary btn-sm" onClick={() => saveIntegration(igProvider === 'meta' ? igMetaForm : igUnipileForm)} disabled={saving}>
                                     {saving ? <Loader size={14} className="spinning" /> : <Save size={14} />} Kaydet
                                 </button>
-                                <button className="btn btn-secondary btn-sm" onClick={() => testConnection('instagram')} disabled={saving}>
+                                <button className="btn btn-secondary btn-sm" onClick={() => testConnection('instagram', igProvider)} disabled={saving}>
                                     Bağlantıyı Test Et
                                 </button>
                             </div>
@@ -306,59 +326,71 @@ export default function SettingsPage() {
                                 </div>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                {waForm.is_active && (
-                                    <span className="badge" style={{ fontSize: 10, background: waForm.provider === 'meta' ? 'rgba(59,130,246,0.12)' : 'rgba(139,92,246,0.12)', color: waForm.provider === 'meta' ? '#3b82f6' : '#8b5cf6', border: `1px solid ${waForm.provider === 'meta' ? 'rgba(59,130,246,0.3)' : 'rgba(139,92,246,0.3)'}` }}>
-                                        {waForm.provider === 'meta' ? 'Meta' : 'Unipile'}
-                                    </span>
+                                {waMetaForm.is_active && (
+                                    <span className="badge" style={{ fontSize: 10, background: 'rgba(59,130,246,0.12)', color: '#3b82f6', border: '1px solid rgba(59,130,246,0.3)' }}>Meta</span>
                                 )}
-                                <span style={{ fontSize: 12, color: waForm.is_active ? 'var(--success)' : 'var(--text-muted)' }}>{waForm.is_active ? 'Aktif' : 'Pasif'}</span>
-                                <div className={`toggle ${waForm.is_active ? 'active' : ''}`}
-                                    onClick={() => setWaForm(prev => ({ ...prev, is_active: !prev.is_active }))} />
+                                {waUnipileForm.is_active && (
+                                    <span className="badge" style={{ fontSize: 10, background: 'rgba(139,92,246,0.12)', color: '#8b5cf6', border: '1px solid rgba(139,92,246,0.3)' }}>Unipile</span>
+                                )}
+                                {!waMetaForm.is_active && !waUnipileForm.is_active && (
+                                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Pasif</span>
+                                )}
                             </div>
                         </div>
                         <div style={{ padding: 20 }}>
-                            {/* Provider Seçici */}
+                            {/* Provider Seçici Tab */}
                             <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
                                 {['meta', 'unipile'].map(p => (
                                     <button key={p}
-                                        className={`btn btn-sm ${waForm.provider === p ? 'btn-primary' : 'btn-ghost'}`}
-                                        onClick={() => setWaForm(prev => ({ ...prev, provider: p }))}
+                                        className={`btn btn-sm ${waProvider === p ? 'btn-primary' : 'btn-ghost'}`}
+                                        onClick={() => setWaProvider(p)}
                                         style={{ textTransform: 'capitalize', minWidth: 90 }}>
                                         {p === 'meta' ? 'Meta (Resmi)' : 'Unipile'}
                                     </button>
                                 ))}
                             </div>
 
-                            {waForm.provider === 'meta' ? (
+                            {/* Per-provider aktif/pasif toggle */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                                <span style={{ fontSize: 12, color: (waProvider === 'meta' ? waMetaForm.is_active : waUnipileForm.is_active) ? 'var(--success)' : 'var(--text-muted)' }}>
+                                    {waProvider === 'meta' ? 'Meta' : 'Unipile'}: {(waProvider === 'meta' ? waMetaForm.is_active : waUnipileForm.is_active) ? 'Aktif' : 'Pasif'}
+                                </span>
+                                <div className={`toggle ${(waProvider === 'meta' ? waMetaForm.is_active : waUnipileForm.is_active) ? 'active' : ''}`}
+                                    onClick={() => waProvider === 'meta'
+                                        ? setWaMetaForm(prev => ({ ...prev, is_active: !prev.is_active }))
+                                        : setWaUnipileForm(prev => ({ ...prev, is_active: !prev.is_active }))} />
+                            </div>
+
+                            {waProvider === 'meta' ? (
                                 <>
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
                                         <div>
                                             <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
                                                 <Key size={12} /> Access Token
                                             </label>
-                                            <input className="input" type="password" placeholder="WhatsApp Access Token" value={waForm.api_key}
-                                                onChange={e => setWaForm(prev => ({ ...prev, api_key: e.target.value }))} />
+                                            <input className="input" type="password" placeholder="WhatsApp Access Token" value={waMetaForm.api_key}
+                                                onChange={e => setWaMetaForm(prev => ({ ...prev, api_key: e.target.value }))} />
                                         </div>
                                         <div>
                                             <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
                                                 <Shield size={12} /> App Secret
                                             </label>
-                                            <input className="input" type="password" placeholder="App Secret" value={waForm.api_secret}
-                                                onChange={e => setWaForm(prev => ({ ...prev, api_secret: e.target.value }))} />
+                                            <input className="input" type="password" placeholder="App Secret" value={waMetaForm.api_secret}
+                                                onChange={e => setWaMetaForm(prev => ({ ...prev, api_secret: e.target.value }))} />
                                         </div>
                                         <div>
                                             <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
                                                 <Phone size={12} /> Phone Number ID
                                             </label>
-                                            <input className="input" placeholder="WhatsApp Phone Number ID" value={waForm.phone_number_id}
-                                                onChange={e => setWaForm(prev => ({ ...prev, phone_number_id: e.target.value }))} />
+                                            <input className="input" placeholder="WhatsApp Phone Number ID" value={waMetaForm.phone_number_id}
+                                                onChange={e => setWaMetaForm(prev => ({ ...prev, phone_number_id: e.target.value }))} />
                                         </div>
                                         <div>
                                             <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
                                                 <Shield size={12} /> Verify Token
                                             </label>
-                                            <input className="input" placeholder="Webhook Verify Token" value={waForm.verify_token}
-                                                onChange={e => setWaForm(prev => ({ ...prev, verify_token: e.target.value }))} />
+                                            <input className="input" placeholder="Webhook Verify Token" value={waMetaForm.verify_token}
+                                                onChange={e => setWaMetaForm(prev => ({ ...prev, verify_token: e.target.value }))} />
                                         </div>
                                     </div>
                                     <div style={{ marginBottom: 14 }}>
@@ -383,24 +415,23 @@ export default function SettingsPage() {
                                             <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
                                                 <Key size={12} /> Unipile API Key
                                             </label>
-                                            <input className="input" type="password" placeholder="Unipile API Key" value={waForm.api_key}
-                                                onChange={e => setWaForm(prev => ({ ...prev, api_key: e.target.value }))} />
+                                            <input className="input" type="password" placeholder="Unipile API Key" value={waUnipileForm.api_key}
+                                                onChange={e => setWaUnipileForm(prev => ({ ...prev, api_key: e.target.value }))} />
                                         </div>
                                         <div>
                                             <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
                                                 <Globe size={12} /> DSN URL
                                             </label>
-                                            <input className="input" placeholder="https://api1.unipile.com:13433" value={waForm.dsn_url}
-                                                onChange={e => setWaForm(prev => ({ ...prev, dsn_url: e.target.value }))} />
+                                            <input className="input" placeholder="https://api1.unipile.com:13433" value={waUnipileForm.dsn_url}
+                                                onChange={e => setWaUnipileForm(prev => ({ ...prev, dsn_url: e.target.value }))} />
                                         </div>
                                     </div>
-                                    {/* Unipile Account ID */}
                                     <div style={{ marginBottom: 14 }}>
                                         <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
                                             <MessageCircle size={14} /> Unipile Account ID
                                         </label>
-                                        <input className="input" placeholder="Unipile Dashboard → Accounts → Account ID" value={waForm.unipile_account_id}
-                                            onChange={e => setWaForm(prev => ({ ...prev, unipile_account_id: e.target.value }))} />
+                                        <input className="input" placeholder="Unipile Dashboard → Accounts → Account ID" value={waUnipileForm.unipile_account_id}
+                                            onChange={e => setWaUnipileForm(prev => ({ ...prev, unipile_account_id: e.target.value }))} />
                                         <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
                                             Unipile Dashboard → Accounts sayfasından WhatsApp hesabınızın ID'sini kopyalayın
                                         </p>
@@ -420,10 +451,10 @@ export default function SettingsPage() {
                             )}
 
                             <div style={{ display: 'flex', gap: 8 }}>
-                                <button className="btn btn-primary btn-sm" onClick={() => saveIntegration(waForm)} disabled={saving}>
+                                <button className="btn btn-primary btn-sm" onClick={() => saveIntegration(waProvider === 'meta' ? waMetaForm : waUnipileForm)} disabled={saving}>
                                     {saving ? <Loader size={14} className="spinning" /> : <Save size={14} />} Kaydet
                                 </button>
-                                <button className="btn btn-secondary btn-sm" onClick={() => testConnection('whatsapp')} disabled={saving}>
+                                <button className="btn btn-secondary btn-sm" onClick={() => testConnection('whatsapp', waProvider)} disabled={saving}>
                                     Bağlantıyı Test Et
                                 </button>
                             </div>

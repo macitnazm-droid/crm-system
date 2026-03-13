@@ -90,7 +90,7 @@ export const webhooksAPI = {
 export const integrationsAPI = {
     list: () => api.get('/integrations'),
     save: (data) => api.post('/integrations', data),
-    test: (platform) => api.post('/integrations/test', { platform }),
+    test: (platform, provider) => api.post('/integrations/test', { platform, provider }),
     unipileAccounts: () => api.get('/integrations/unipile-accounts'),
 };
 
