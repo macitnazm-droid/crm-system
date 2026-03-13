@@ -76,6 +76,8 @@ export const aiAPI = {
     updatePrompt: (id, data) => api.patch(`/ai/prompts/${id}`, data),
     deletePrompt: (id) => api.delete(`/ai/prompts/${id}`),
     categorize: (customerId) => api.post('/ai/categorize', { customer_id: customerId }),
+    getPlatformSettings: () => api.get('/ai/platform-settings'),
+    updatePlatformSettings: (data) => api.patch('/ai/platform-settings', data),
 };
 
 // Reports

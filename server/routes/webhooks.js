@@ -515,8 +515,19 @@ async function processIncomingMessage(db, io, data) {
     io.to(`company:${company_id}`).emit('conversation:updated', { conversation });
 
     // 4. AI etkinse otomatik yanıt üret
+    // Platform bazlı AI kontrolü (şirket ayarı)
+    let platformAiEnabled = true;
+    try {
+        const company = db.prepare('SELECT ai_instagram, ai_whatsapp, ai_messenger FROM companies WHERE id = ?').get(company_id);
+        if (company) {
+            if (source === 'instagram' && company.ai_instagram === 0) platformAiEnabled = false;
+            if (source === 'whatsapp' && company.ai_whatsapp === 0) platformAiEnabled = false;
+            if (source === 'messenger' && company.ai_messenger === 0) platformAiEnabled = false;
+        }
+    } catch (e) { }
+
     let aiMessage = null;
-    if (conversation.ai_enabled) {
+    if (conversation.ai_enabled && platformAiEnabled) {
         const messages = db.prepare('SELECT * FROM messages WHERE conversation_id = ? AND company_id = ? ORDER BY created_at ASC').all(conversation.id, company_id);
 
         // Sonsuz döngü koruması: Son 3 mesajın hepsi outbound (AI) ise yanıt verme

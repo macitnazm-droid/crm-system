@@ -171,4 +171,50 @@ router.post('/categorize', authMiddleware, async (req, res) => {
     }
 });
 
+// GET /api/ai/platform-settings — Platform bazlı AI ayarlarını getir
+router.get('/platform-settings', authMiddleware, (req, res) => {
+    try {
+        const db = req.app.locals.db;
+        const companyId = req.user.company_id;
+        const company = db.prepare('SELECT ai_instagram, ai_whatsapp, ai_messenger FROM companies WHERE id = ?').get(companyId);
+        res.json({
+            ai_instagram: company?.ai_instagram ?? 1,
+            ai_whatsapp: company?.ai_whatsapp ?? 1,
+            ai_messenger: company?.ai_messenger ?? 1,
+        });
+    } catch (err) {
+        res.status(500).json({ error: 'Ayarlar yüklenirken hata' });
+    }
+});
+
+// PATCH /api/ai/platform-settings — Platform bazlı AI ayarlarını güncelle
+router.patch('/platform-settings', authMiddleware, adminOnly, (req, res) => {
+    try {
+        const db = req.app.locals.db;
+        const companyId = req.user.company_id;
+        const { ai_instagram, ai_whatsapp, ai_messenger } = req.body;
+
+        const updates = [];
+        const params = [];
+        if (ai_instagram !== undefined) { updates.push('ai_instagram = ?'); params.push(ai_instagram ? 1 : 0); }
+        if (ai_whatsapp !== undefined) { updates.push('ai_whatsapp = ?'); params.push(ai_whatsapp ? 1 : 0); }
+        if (ai_messenger !== undefined) { updates.push('ai_messenger = ?'); params.push(ai_messenger ? 1 : 0); }
+
+        if (updates.length > 0) {
+            params.push(companyId);
+            db.prepare(`UPDATE companies SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+        }
+
+        const company = db.prepare('SELECT ai_instagram, ai_whatsapp, ai_messenger FROM companies WHERE id = ?').get(companyId);
+        res.json({
+            ai_instagram: company?.ai_instagram ?? 1,
+            ai_whatsapp: company?.ai_whatsapp ?? 1,
+            ai_messenger: company?.ai_messenger ?? 1,
+        });
+    } catch (err) {
+        console.error('Platform AI settings error:', err);
+        res.status(500).json({ error: 'Ayarlar güncellenirken hata' });
+    }
+});
+
 module.exports = router;

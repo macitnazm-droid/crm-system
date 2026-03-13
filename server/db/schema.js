@@ -94,6 +94,20 @@ function initDB() {
     }
   } catch (err) { }
 
+  // Migration: Companies tablosuna platform bazlı AI toggle ekle
+  try {
+    const compInfo2 = db.prepare(`PRAGMA table_info(companies)`).all();
+    if (compInfo2.length > 0 && !compInfo2.some(c => c.name === 'ai_instagram')) {
+      db.exec(`ALTER TABLE companies ADD COLUMN ai_instagram INTEGER DEFAULT 1`);
+    }
+    if (compInfo2.length > 0 && !compInfo2.some(c => c.name === 'ai_whatsapp')) {
+      db.exec(`ALTER TABLE companies ADD COLUMN ai_whatsapp INTEGER DEFAULT 1`);
+    }
+    if (compInfo2.length > 0 && !compInfo2.some(c => c.name === 'ai_messenger')) {
+      db.exec(`ALTER TABLE companies ADD COLUMN ai_messenger INTEGER DEFAULT 1`);
+    }
+  } catch (err) { }
+
   // 2.1 Special Migration: Users tablosundaki ROLE kısıtlamasını güncelle
   try {
     const userTableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get();
