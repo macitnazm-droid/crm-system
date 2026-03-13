@@ -50,11 +50,9 @@ function initDB() {
     }
   } catch (err) { }
 
-  // NOT: Destructive table rebuild migration'ları kaldırıldı (veri kaybı riski).
-  // Tüm tablolar artık doğru schema ile oluşturuluyor (CREATE TABLE IF NOT EXISTS).
   // Eski _old tabloları varsa temizle
   try {
-    ['customers_old', 'messages_old', 'integration_settings_old', 'conversations_backup'].forEach(t => {
+    ['customers_old', 'messages_old', 'integration_settings_old', 'conversations_backup', 'appointments_rebuild'].forEach(t => {
       db.exec(`DROP TABLE IF EXISTS ${t}`);
     });
   } catch (err) { }
@@ -124,6 +122,51 @@ function initDB() {
     addCompCol('sms_msgheader', 'TEXT');
     addCompCol('appointment_reminder_minutes', 'INTEGER DEFAULT 60');
   } catch (err) { }
+
+  // Migration: appointments tablosunu bozuk FK referansları olmadan yeniden oluştur
+  try {
+    const apptSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='appointments'").get();
+    if (apptSql && apptSql.sql && apptSql.sql.includes('customers_old')) {
+      console.log('🔄 Appointments tablosu yeniden oluşturuluyor (bozuk FK düzeltme)...');
+      db.pragma('foreign_keys = OFF');
+      db.transaction(() => {
+        db.exec(`ALTER TABLE appointments RENAME TO appointments_rebuild;`);
+        db.exec(`
+          CREATE TABLE appointments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_id INTEGER,
+            customer_id INTEGER,
+            conversation_id INTEGER,
+            customer_name TEXT,
+            phone TEXT,
+            appointment_time TEXT,
+            notes TEXT,
+            status TEXT DEFAULT 'pending',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            staff_id INTEGER,
+            service_id INTEGER,
+            room_id INTEGER,
+            appointment_date TEXT,
+            start_time TEXT,
+            end_time TEXT,
+            source TEXT DEFAULT 'manual',
+            reminder_sent INTEGER DEFAULT 0
+          );
+        `);
+        // Mevcut sütunları aktar
+        const oldCols = db.prepare(`PRAGMA table_info(appointments_rebuild)`).all().map(c => c.name);
+        const newCols = ['id','company_id','customer_id','conversation_id','customer_name','phone','appointment_time','notes','status','created_at','staff_id','service_id','room_id','appointment_date','start_time','end_time','source','reminder_sent'];
+        const commonCols = newCols.filter(c => oldCols.includes(c)).join(', ');
+        db.exec(`INSERT INTO appointments (${commonCols}) SELECT ${commonCols} FROM appointments_rebuild;`);
+        db.exec(`DROP TABLE appointments_rebuild;`);
+      })();
+      db.pragma('foreign_keys = ON');
+      console.log('✅ Appointments tablosu düzeltildi');
+    }
+  } catch (err) {
+    console.error('Appointments rebuild hatası:', err.message);
+    try { db.pragma('foreign_keys = ON'); } catch(e) {}
+  }
 
   // Migration: appointments tablosuna yeni randevu sistemi sütunları ekle
   try {

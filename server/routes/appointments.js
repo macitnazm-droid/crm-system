@@ -95,22 +95,20 @@ router.post('/', authMiddleware, adminOnly, (req, res) => {
             }
         }
 
-        // Müşteriyi telefon veya isimle bul (varsa)
-        let customerId = null;
-        if (phone) {
-            const cust = db.prepare('SELECT id FROM customers WHERE company_id = ? AND phone = ? LIMIT 1').get(companyId, phone);
-            if (cust) customerId = cust.id;
-        }
+        // Foreign key bozuk referans sorunu (customers_old) — geçici kapat
+        db.pragma('foreign_keys = OFF');
 
         const result = db.prepare(`
-            INSERT INTO appointments (company_id, customer_id, customer_name, phone, staff_id, service_id, room_id,
+            INSERT INTO appointments (company_id, customer_name, phone, staff_id, service_id, room_id,
                 appointment_date, start_time, end_time, notes, status, source, appointment_time)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-            companyId, customerId, customer_name || '', phone || '', staff_id || null, service_id || null, room_id || null,
+            companyId, customer_name || '', phone || '', staff_id || null, service_id || null, room_id || null,
             appointment_date, start_time, calcEndTime, notes || '', status || 'confirmed', source || 'manual',
             `${appointment_date} ${start_time}`
         );
+
+        db.pragma('foreign_keys = ON');
 
         const appointment = db.prepare('SELECT * FROM appointments WHERE id = ?').get(result.lastInsertRowid);
 
