@@ -53,9 +53,12 @@ async function initClient(db, io, companyId) {
                 keys: makeCacheableSignalKeyStore(state.keys, undefined),
             },
             printQRInTerminal: false,
-            browser: ['CRM Platform', 'Chrome', '120.0'],
+            browser: ['Ubuntu', 'Chrome', '124.0.6367.155'],
             syncFullHistory: false,
             generateHighQualityLinkPreview: false,
+            connectTimeoutMs: 60000,
+            defaultQueryTimeoutMs: undefined,
+            keepAliveIntervalMs: 30000,
         });
 
         // Creds güncelleme
@@ -82,6 +85,8 @@ async function initClient(db, io, companyId) {
             if (connection === 'open') {
                 console.log(`✅ Baileys bağlandı (company: ${companyId})`);
                 qrCodes.delete(companyId);
+                // Retry sayacını sıfırla
+                if (clients._retries) clients._retries[`retry_${companyId}`] = 0;
 
                 const phone = sock.user?.id?.split(':')[0] || sock.user?.id?.split('@')[0] || '';
                 const name = sock.user?.name || '';
@@ -113,16 +118,18 @@ async function initClient(db, io, companyId) {
             // Bağlantı kapandı
             if (connection === 'close') {
                 const statusCode = lastDisconnect?.error?.output?.statusCode;
-                const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+                // Sadece geçici hatalarda yeniden bağlan, kalıcı hatalarda döngüye girme
+                const nonRecoverableCodes = [DisconnectReason.loggedOut, 405, 401, 403, 410];
+                const shouldReconnect = !nonRecoverableCodes.includes(statusCode);
 
                 console.log(`❌ Baileys bağlantı kesildi (company: ${companyId}), code: ${statusCode}, reconnect: ${shouldReconnect}`);
 
                 clients.delete(companyId);
                 qrCodes.delete(companyId);
 
-                if (statusCode === DisconnectReason.loggedOut) {
-                    // Oturum kapatıldı — auth dosyalarını temizle
-                    clientStatus.set(companyId, { status: 'disconnected', phone: null, name: null });
+                if (!shouldReconnect) {
+                    // Kalıcı hata — auth dosyalarını temizle ve dur
+                    clientStatus.set(companyId, { status: 'disconnected', phone: null, name: null, error: `Bağlantı hatası: ${statusCode}` });
                     try {
                         fs.rmSync(authDir, { recursive: true, force: true });
                     } catch (e) { }
@@ -134,16 +141,28 @@ async function initClient(db, io, companyId) {
                         ).run(new Date().toISOString(), companyId);
                     } catch (e) { }
 
-                    io.to(`company:${companyId}`).emit('whatsapp-web:status', { status: 'disconnected' });
-                } else if (shouldReconnect) {
-                    // Otomatik yeniden bağlan
-                    console.log(`🔄 Baileys yeniden bağlanıyor (company: ${companyId})...`);
+                    io.to(`company:${companyId}`).emit('whatsapp-web:status', { status: 'disconnected', error: `Kod: ${statusCode}` });
+                } else {
+                    // Geçici hata — otomatik yeniden bağlan (max 3 deneme)
+                    const retryKey = `retry_${companyId}`;
+                    const retryCount = (clients._retries?.[retryKey] || 0) + 1;
+                    if (!clients._retries) clients._retries = {};
+                    clients._retries[retryKey] = retryCount;
+
+                    if (retryCount > 3) {
+                        console.log(`⛔ Baileys max retry aşıldı (company: ${companyId}), durduruluyor`);
+                        clientStatus.set(companyId, { status: 'error', phone: null, name: null, error: 'Bağlantı kurulamadı (3 deneme)' });
+                        clients._retries[retryKey] = 0;
+                        return;
+                    }
+
+                    console.log(`🔄 Baileys yeniden bağlanıyor (company: ${companyId}, deneme: ${retryCount}/3)...`);
                     clientStatus.set(companyId, { status: 'reconnecting', phone: null, name: null });
                     setTimeout(() => {
                         initClient(db, io, companyId).catch(err => {
                             console.error(`Baileys reconnect hatası (company: ${companyId}):`, err.message);
                         });
-                    }, 3000);
+                    }, 5000 * retryCount);
                 }
             }
         });
