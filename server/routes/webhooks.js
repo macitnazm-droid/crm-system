@@ -354,29 +354,47 @@ let _messengerMigrationDone = false;
 function ensureMessengerSupport(db) {
     if (_messengerMigrationDone) return;
     try {
-        // Schema check yerine gerçek INSERT testi yap
-        let needsMigration = false;
-        try {
-            db.exec("CREATE TABLE IF NOT EXISTS _migration_test (source TEXT CHECK(source IN ('instagram', 'whatsapp', 'messenger', 'api', 'manual')))");
-            db.exec("DROP TABLE IF EXISTS _migration_test");
-            // Asıl messages tablosunu test et
-            const testStmt = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='messages'").get();
-            console.log('🔍 [LAZY] Messages SQL:', testStmt?.sql);
-            // Tırnaklı 'messenger' kontrolü - CHECK constraint içinde olmalı
-            if (testStmt && !testStmt.sql.includes("'messenger'")) {
-                needsMigration = true;
-                console.log('⚠️ [LAZY] Messages tablosunda messenger YOK (tırnaklı kontrol)');
-            }
-        } catch (e) {
-            needsMigration = true;
+        // Önce bozuk FK referanslarını düzelt (önceki migration'lardan kalan)
+        // conversations tablosunun customers_old'a referans vermesi sorununu çöz
+        const convSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='conversations'").get();
+        if (convSql && convSql.sql.includes('customers_old')) {
+            console.log('🔧 [LAZY] Conversations tablosu bozuk FK referansı düzeltiliyor...');
+            db.pragma('foreign_keys = OFF');
+            db.pragma('legacy_alter_table = ON');
+            const convCols = db.prepare('PRAGMA table_info(conversations)').all().map(c => c.name);
+            db.exec('DROP TABLE IF EXISTS conversations_backup');
+            db.exec('ALTER TABLE conversations RENAME TO conversations_backup');
+            // conversations tablosunu doğru FK ile yeniden oluştur
+            db.exec(`CREATE TABLE conversations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                company_id INTEGER NOT NULL REFERENCES companies(id),
+                customer_id INTEGER NOT NULL REFERENCES customers(id),
+                status TEXT DEFAULT 'open' CHECK(status IN ('open', 'waiting', 'closed')),
+                ai_enabled INTEGER DEFAULT 1,
+                assigned_user_id INTEGER REFERENCES users(id),
+                last_message_preview TEXT,
+                unread_count INTEGER DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )`);
+            const newConvCols = db.prepare('PRAGMA table_info(conversations)').all().map(c => c.name);
+            const commonConv = convCols.filter(c => newConvCols.includes(c)).join(', ');
+            db.exec(`INSERT INTO conversations (${commonConv}) SELECT ${commonConv} FROM conversations_backup`);
+            db.exec('DROP TABLE conversations_backup');
+            db.pragma('legacy_alter_table = OFF');
+            db.pragma('foreign_keys = ON');
+            console.log('✅ [LAZY] Conversations FK düzeltildi!');
         }
 
-        if (needsMigration) {
-            console.log('🔧 [LAZY] Messages tablosu ZORLA yeniden oluşturuluyor...');
+        // Messages tablosu migration
+        const msgSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='messages'").get();
+        console.log('🔍 [LAZY] Messages SQL:', msgSql?.sql);
+        if (msgSql && !msgSql.sql.includes("'messenger'")) {
+            console.log('🔧 [LAZY] Messages tablosu yeniden oluşturuluyor...');
             db.pragma('foreign_keys = OFF');
+            db.pragma('legacy_alter_table = ON');
             db.exec('DROP TABLE IF EXISTS messages_old');
             const oldCols = db.prepare('PRAGMA table_info(messages)').all().map(c => c.name);
-            console.log('📋 [LAZY] Eski kolonlar:', oldCols.join(', '));
             db.exec('ALTER TABLE messages RENAME TO messages_old');
             db.exec(`CREATE TABLE messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -396,17 +414,17 @@ function ensureMessengerSupport(db) {
             const common = oldCols.filter(c => newCols.includes(c)).join(', ');
             db.exec(`INSERT INTO messages (${common}) SELECT ${common} FROM messages_old`);
             db.exec('DROP TABLE messages_old');
+            db.pragma('legacy_alter_table = OFF');
             db.pragma('foreign_keys = ON');
-            console.log('✅ [LAZY] Messages tablosu messenger desteği EKLENDI!');
-        } else {
-            console.log('✅ [LAZY] Messages tablosu zaten messenger destekli');
+            console.log('✅ [LAZY] Messages messenger desteği EKLENDI!');
         }
 
-        // Customers tablosu
+        // Customers tablosu migration
         const custSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='customers'").get();
         if (custSql && !custSql.sql.includes("'messenger'")) {
-            console.log('🔧 [LAZY] Customers tablosu ZORLA yeniden oluşturuluyor...');
+            console.log('🔧 [LAZY] Customers tablosu yeniden oluşturuluyor...');
             db.pragma('foreign_keys = OFF');
+            db.pragma('legacy_alter_table = ON');
             db.exec('DROP TABLE IF EXISTS customers_old');
             const cols = db.prepare('PRAGMA table_info(customers)').all();
             db.exec('ALTER TABLE customers RENAME TO customers_old');
@@ -432,13 +450,18 @@ function ensureMessengerSupport(db) {
             const common = cols.map(c => c.name).filter(c => newCols.includes(c)).join(', ');
             db.exec(`INSERT INTO customers (${common}) SELECT ${common} FROM customers_old`);
             db.exec('DROP TABLE customers_old');
+            db.pragma('legacy_alter_table = OFF');
             db.pragma('foreign_keys = ON');
-            console.log('✅ [LAZY] Customers tablosu messenger desteği EKLENDI!');
+            console.log('✅ [LAZY] Customers messenger desteği EKLENDI!');
         }
 
         _messengerMigrationDone = true;
+        console.log('✅ [LAZY] Tüm migration kontrolleri tamamlandı');
     } catch (err) {
         console.error('❌ [LAZY] Migration error:', err.message, err.stack);
+        // Pragmaları güvenli duruma getir
+        try { db.pragma('legacy_alter_table = OFF'); } catch(e) {}
+        try { db.pragma('foreign_keys = ON'); } catch(e) {}
     }
 }
 

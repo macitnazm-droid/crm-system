@@ -56,6 +56,7 @@ function initDB() {
     if (custTableSql && !custTableSql.sql.includes('messenger')) {
       console.log('🔄 Customers tablosu güncelleniyor (messenger desteği)...');
       db.pragma('foreign_keys = OFF');
+      db.pragma('legacy_alter_table = ON');
       db.transaction(() => {
         const cols = db.prepare('PRAGMA table_info(customers)').all();
         const colNames = cols.map(c => c.name).join(', ');
@@ -87,10 +88,12 @@ function initDB() {
         db.exec(`INSERT INTO customers (${commonCols}) SELECT ${commonCols} FROM customers_old`);
         db.exec(`DROP TABLE customers_old`);
       })();
+      db.pragma('legacy_alter_table = OFF');
       db.pragma('foreign_keys = ON');
     }
   } catch (err) {
     console.error('Customers messenger migration error:', err.message);
+    try { db.pragma('legacy_alter_table = OFF'); } catch(e) {}
     db.pragma('foreign_keys = ON');
   }
 
@@ -110,6 +113,7 @@ function initDB() {
     if (msgTableSql && !msgTableSql.sql.includes('messenger')) {
       console.log('🔄 Messages tablosu güncelleniyor (messenger desteği)...');
       db.pragma('foreign_keys = OFF');
+      db.pragma('legacy_alter_table = ON');
       db.transaction(() => {
         const oldCols = db.prepare('PRAGMA table_info(messages)').all().map(c => c.name);
         console.log('📋 Eski kolonlar:', oldCols.join(', '));
@@ -137,6 +141,7 @@ function initDB() {
         db.exec(`DROP TABLE messages_old`);
         console.log('✅ Messages migration transaction tamamlandı');
       })();
+      db.pragma('legacy_alter_table = OFF');
       db.pragma('foreign_keys = ON');
       console.log('✅ Messages tablosu messenger desteği eklendi');
     } else {
@@ -145,6 +150,7 @@ function initDB() {
   } catch (err) {
     console.error('❌ Messages messenger migration error:', err.message);
     console.error('Stack:', err.stack);
+    try { db.pragma('legacy_alter_table = OFF'); } catch(e) {}
     db.pragma('foreign_keys = ON');
   }
 
@@ -154,6 +160,7 @@ function initDB() {
     if (intTableSql && !intTableSql.sql.includes('messenger')) {
       console.log('🔄 Integration_settings tablosu güncelleniyor (messenger desteği)...');
       db.pragma('foreign_keys = OFF');
+      db.pragma('legacy_alter_table = ON');
       db.transaction(() => {
         const cols = db.prepare('PRAGMA table_info(integration_settings)').all();
         const colNames = cols.map(c => c.name).join(', ');
@@ -182,10 +189,12 @@ function initDB() {
         db.exec(`INSERT INTO integration_settings (${commonCols}) SELECT ${commonCols} FROM integration_settings_old`);
         db.exec(`DROP TABLE integration_settings_old`);
       })();
+      db.pragma('legacy_alter_table = OFF');
       db.pragma('foreign_keys = ON');
     }
   } catch (err) {
     console.error('Integration_settings messenger migration error:', err.message);
+    try { db.pragma('legacy_alter_table = OFF'); } catch(e) {}
     db.pragma('foreign_keys = ON');
   }
 
