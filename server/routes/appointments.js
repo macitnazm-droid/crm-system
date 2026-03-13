@@ -95,12 +95,19 @@ router.post('/', authMiddleware, adminOnly, (req, res) => {
             }
         }
 
+        // Müşteriyi telefon veya isimle bul (varsa)
+        let customerId = null;
+        if (phone) {
+            const cust = db.prepare('SELECT id FROM customers WHERE company_id = ? AND phone = ? LIMIT 1').get(companyId, phone);
+            if (cust) customerId = cust.id;
+        }
+
         const result = db.prepare(`
-            INSERT INTO appointments (company_id, customer_name, phone, staff_id, service_id, room_id,
+            INSERT INTO appointments (company_id, customer_id, customer_name, phone, staff_id, service_id, room_id,
                 appointment_date, start_time, end_time, notes, status, source, appointment_time)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-            companyId, customer_name || '', phone || '', staff_id || null, service_id || null, room_id || null,
+            companyId, customerId, customer_name || '', phone || '', staff_id || null, service_id || null, room_id || null,
             appointment_date, start_time, calcEndTime, notes || '', status || 'confirmed', source || 'manual',
             `${appointment_date} ${start_time}`
         );
@@ -118,8 +125,8 @@ router.post('/', authMiddleware, adminOnly, (req, res) => {
 
         res.json({ appointment });
     } catch (err) {
-        console.error('Create appointment error:', err);
-        res.status(500).json({ error: 'Randevu oluşturulurken hata' });
+        console.error('Create appointment error:', err.message, err.code);
+        res.status(500).json({ error: 'Randevu oluşturulurken hata: ' + err.message });
     }
 });
 
