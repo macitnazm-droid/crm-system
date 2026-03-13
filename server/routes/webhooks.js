@@ -349,17 +349,34 @@ router.post('/simulate', async (req, res) => {
 });
 
 // Gelen mesajı işle
-// Lazy migration: CHECK constraint'e messenger ekle (bir kez çalışır)
+// Forced migration: messages tablosunu messenger destekli olarak yeniden oluştur
 let _messengerMigrationDone = false;
 function ensureMessengerSupport(db) {
     if (_messengerMigrationDone) return;
     try {
-        const msgSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='messages'").get();
-        if (msgSql && !msgSql.sql.includes('messenger')) {
-            console.log('🔧 [LAZY] Messages tablosu messenger desteği ekleniyor...');
+        // Schema check yerine gerçek INSERT testi yap
+        let needsMigration = false;
+        try {
+            db.exec("CREATE TABLE IF NOT EXISTS _migration_test (source TEXT CHECK(source IN ('instagram', 'whatsapp', 'messenger', 'api', 'manual')))");
+            db.exec("DROP TABLE IF EXISTS _migration_test");
+            // Asıl messages tablosunu test et
+            const testStmt = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='messages'").get();
+            console.log('🔍 [LAZY] Messages SQL:', testStmt?.sql);
+            // Tırnaklı 'messenger' kontrolü - CHECK constraint içinde olmalı
+            if (testStmt && !testStmt.sql.includes("'messenger'")) {
+                needsMigration = true;
+                console.log('⚠️ [LAZY] Messages tablosunda messenger YOK (tırnaklı kontrol)');
+            }
+        } catch (e) {
+            needsMigration = true;
+        }
+
+        if (needsMigration) {
+            console.log('🔧 [LAZY] Messages tablosu ZORLA yeniden oluşturuluyor...');
             db.pragma('foreign_keys = OFF');
             db.exec('DROP TABLE IF EXISTS messages_old');
             const oldCols = db.prepare('PRAGMA table_info(messages)').all().map(c => c.name);
+            console.log('📋 [LAZY] Eski kolonlar:', oldCols.join(', '));
             db.exec('ALTER TABLE messages RENAME TO messages_old');
             db.exec(`CREATE TABLE messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -380,12 +397,15 @@ function ensureMessengerSupport(db) {
             db.exec(`INSERT INTO messages (${common}) SELECT ${common} FROM messages_old`);
             db.exec('DROP TABLE messages_old');
             db.pragma('foreign_keys = ON');
-            console.log('✅ [LAZY] Messages tablosu messenger desteği eklendi!');
+            console.log('✅ [LAZY] Messages tablosu messenger desteği EKLENDI!');
+        } else {
+            console.log('✅ [LAZY] Messages tablosu zaten messenger destekli');
         }
 
+        // Customers tablosu
         const custSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='customers'").get();
-        if (custSql && !custSql.sql.includes('messenger_id')) {
-            console.log('🔧 [LAZY] Customers tablosu messenger desteği ekleniyor...');
+        if (custSql && !custSql.sql.includes("'messenger'")) {
+            console.log('🔧 [LAZY] Customers tablosu ZORLA yeniden oluşturuluyor...');
             db.pragma('foreign_keys = OFF');
             db.exec('DROP TABLE IF EXISTS customers_old');
             const cols = db.prepare('PRAGMA table_info(customers)').all();
@@ -413,13 +433,12 @@ function ensureMessengerSupport(db) {
             db.exec(`INSERT INTO customers (${common}) SELECT ${common} FROM customers_old`);
             db.exec('DROP TABLE customers_old');
             db.pragma('foreign_keys = ON');
-            console.log('✅ [LAZY] Customers tablosu messenger desteği eklendi!');
+            console.log('✅ [LAZY] Customers tablosu messenger desteği EKLENDI!');
         }
 
         _messengerMigrationDone = true;
-        console.log('✅ [LAZY] Messenger migration kontrolü tamamlandı');
     } catch (err) {
-        console.error('❌ [LAZY] Migration error:', err.message);
+        console.error('❌ [LAZY] Migration error:', err.message, err.stack);
     }
 }
 
