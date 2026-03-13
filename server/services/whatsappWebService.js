@@ -1,11 +1,15 @@
-// WhatsApp Web.js entegrasyonu — Ücretsiz WhatsApp bağlantısı (QR kod ile)
-const { Client, LocalAuth } = require('whatsapp-web.js');
+// WhatsApp Baileys entegrasyonu — Ücretsiz WhatsApp bağlantısı (QR kod ile)
+// Chromium gerektirmez, direkt WebSocket bağlantısı kullanır (~50MB RAM)
+
+const { makeWASocket, useMultiFileAuthState, DisconnectReason, makeCacheableSignalKeyStore } = require('@whiskeysockets/baileys');
 const QRCode = require('qrcode');
 const { processIncomingMessage } = require('../routes/webhooks');
 const { isDuplicate, markAsSent, wasSentByUs } = require('./messageDedup');
+const path = require('path');
+const fs = require('fs');
 
-// Her şirket için ayrı WhatsApp Web client
-const clients = new Map();       // companyId -> Client
+// Her şirket için ayrı WhatsApp socket
+const clients = new Map();       // companyId -> socket
 const qrCodes = new Map();       // companyId -> base64 QR image
 const clientStatus = new Map();  // companyId -> { status, phone, name }
 
@@ -21,176 +25,204 @@ async function initClient(db, io, companyId) {
     // Zaten bağlıysa tekrar başlatma
     if (clients.has(companyId)) {
         const existing = clients.get(companyId);
-        const state = await existing.getState().catch(() => null);
-        if (state === 'CONNECTED') {
+        if (existing.user) {
             return { status: 'already_connected' };
         }
-        // Bağlı değilse temizle ve yeniden başlat
-        try { await existing.destroy(); } catch (e) { }
+        // Bağlı değilse temizle
+        try { existing.end(); } catch (e) { }
         clients.delete(companyId);
     }
 
     clientStatus.set(companyId, { status: 'initializing', phone: null, name: null });
     qrCodes.delete(companyId);
 
-    const client = new Client({
-        authStrategy: new LocalAuth({ clientId: `company_${companyId}` }),
-        puppeteer: {
-            headless: true,
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-accelerated-2d-canvas',
-                '--no-first-run',
-                '--no-zygote',
-                '--disable-gpu',
-                '--single-process'
-            ]
-        }
-    });
+    // Auth dosyaları her şirket için ayrı dizinde
+    const authDir = path.join(__dirname, '..', '.wwebjs_auth', `company_${companyId}`);
+    if (!fs.existsSync(authDir)) {
+        fs.mkdirSync(authDir, { recursive: true });
+    }
 
-    // QR kod oluşturulduğunda
-    client.on('qr', async (qr) => {
-        console.log(`📱 WhatsApp Web QR oluşturuldu (company: ${companyId})`);
-        try {
-            const qrImage = await QRCode.toDataURL(qr, { width: 300, margin: 2 });
-            qrCodes.set(companyId, qrImage);
-            clientStatus.set(companyId, { status: 'qr_ready', phone: null, name: null });
-            // Real-time QR güncellemesi
-            io.to(`company:${companyId}`).emit('whatsapp-web:qr', { qr: qrImage });
-        } catch (err) {
-            console.error('QR oluşturma hatası:', err.message);
-        }
-    });
+    console.log(`🔄 Baileys client başlatılıyor (company: ${companyId})...`);
 
-    // Bağlantı başarılı
-    client.on('ready', async () => {
-        console.log(`✅ WhatsApp Web bağlandı (company: ${companyId})`);
-        qrCodes.delete(companyId);
-        try {
-            const info = client.info;
-            const phone = info?.wid?.user || '';
-            const name = info?.pushname || '';
-            clientStatus.set(companyId, { status: 'connected', phone, name });
+    try {
+        const { state, saveCreds } = await useMultiFileAuthState(authDir);
 
-            // integration_settings'e kaydet
-            const existing = db.prepare(
-                "SELECT id FROM integration_settings WHERE company_id = ? AND platform = 'whatsapp' AND provider = 'whatsapp-web'"
-            ).get(companyId);
+        const sock = makeWASocket({
+            auth: {
+                creds: state.creds,
+                keys: makeCacheableSignalKeyStore(state.keys, undefined),
+            },
+            printQRInTerminal: false,
+            browser: ['CRM Platform', 'Chrome', '120.0'],
+            syncFullHistory: false,
+            generateHighQualityLinkPreview: false,
+        });
 
-            if (!existing) {
-                db.prepare(`
-                    INSERT INTO integration_settings (company_id, platform, provider, is_active, api_key, created_at, updated_at)
-                    VALUES (?, 'whatsapp', 'whatsapp-web', 1, ?, ?, ?)
-                `).run(companyId, `connected:${phone}`, new Date().toISOString(), new Date().toISOString());
-            } else {
-                db.prepare(
-                    "UPDATE integration_settings SET is_active = 1, api_key = ?, updated_at = ? WHERE id = ?"
-                ).run(`connected:${phone}`, new Date().toISOString(), existing.id);
+        // Creds güncelleme
+        sock.ev.on('creds.update', saveCreds);
+
+        // Bağlantı durumu
+        sock.ev.on('connection.update', async (update) => {
+            const { connection, lastDisconnect, qr } = update;
+
+            // QR kod oluşturuldu
+            if (qr) {
+                console.log(`📱 Baileys QR oluşturuldu (company: ${companyId})`);
+                try {
+                    const qrImage = await QRCode.toDataURL(qr, { width: 300, margin: 2 });
+                    qrCodes.set(companyId, qrImage);
+                    clientStatus.set(companyId, { status: 'qr_ready', phone: null, name: null });
+                    io.to(`company:${companyId}`).emit('whatsapp-web:qr', { qr: qrImage });
+                } catch (err) {
+                    console.error('QR oluşturma hatası:', err.message);
+                }
             }
 
-            io.to(`company:${companyId}`).emit('whatsapp-web:status', { status: 'connected', phone, name });
-        } catch (err) {
-            console.error('WhatsApp Web ready info hatası:', err.message);
-            clientStatus.set(companyId, { status: 'connected', phone: '', name: '' });
-        }
-    });
+            // Bağlantı açıldı
+            if (connection === 'open') {
+                console.log(`✅ Baileys bağlandı (company: ${companyId})`);
+                qrCodes.delete(companyId);
 
-    // Bağlantı kesildi
-    client.on('disconnected', (reason) => {
-        console.log(`❌ WhatsApp Web bağlantı kesildi (company: ${companyId}): ${reason}`);
-        clientStatus.set(companyId, { status: 'disconnected', phone: null, name: null });
-        clients.delete(companyId);
-        qrCodes.delete(companyId);
+                const phone = sock.user?.id?.split(':')[0] || sock.user?.id?.split('@')[0] || '';
+                const name = sock.user?.name || '';
+                clientStatus.set(companyId, { status: 'connected', phone, name });
 
-        // DB'de pasife çek
-        try {
-            db.prepare(
-                "UPDATE integration_settings SET is_active = 0, updated_at = ? WHERE company_id = ? AND platform = 'whatsapp' AND provider = 'whatsapp-web'"
-            ).run(new Date().toISOString(), companyId);
-        } catch (e) { }
+                // integration_settings'e kaydet
+                try {
+                    const existing = db.prepare(
+                        "SELECT id FROM integration_settings WHERE company_id = ? AND platform = 'whatsapp' AND provider = 'whatsapp-web'"
+                    ).get(companyId);
 
-        io.to(`company:${companyId}`).emit('whatsapp-web:status', { status: 'disconnected' });
-    });
+                    if (!existing) {
+                        db.prepare(`
+                            INSERT INTO integration_settings (company_id, platform, provider, is_active, api_key, created_at, updated_at)
+                            VALUES (?, 'whatsapp', 'whatsapp-web', 1, ?, ?, ?)
+                        `).run(companyId, `connected:${phone}`, new Date().toISOString(), new Date().toISOString());
+                    } else {
+                        db.prepare(
+                            "UPDATE integration_settings SET is_active = 1, api_key = ?, updated_at = ? WHERE id = ?"
+                        ).run(`connected:${phone}`, new Date().toISOString(), existing.id);
+                    }
+                } catch (dbErr) {
+                    console.error('DB kayıt hatası:', dbErr.message);
+                }
 
-    // Auth hatası
-    client.on('auth_failure', (msg) => {
-        console.error(`❌ WhatsApp Web auth hatası (company: ${companyId}):`, msg);
-        clientStatus.set(companyId, { status: 'auth_failed', phone: null, name: null });
-        clients.delete(companyId);
-        qrCodes.delete(companyId);
-        io.to(`company:${companyId}`).emit('whatsapp-web:status', { status: 'auth_failed' });
-    });
-
-    // Gelen mesajlar
-    client.on('message', async (msg) => {
-        try {
-            // Kendi gönderdiğimiz mesajları atla
-            if (msg.fromMe) return;
-
-            // Sadece text mesajlar
-            if (msg.type !== 'chat') return;
-
-            const text = msg.body;
-            if (!text) return;
-
-            // Dedup kontrolü
-            if (isDuplicate(msg.id._serialized)) return;
-
-            // Kendi gönderdiğimiz içeriği geri alıyorsak atla
-            if (wasSentByUs(text)) {
-                console.log(`⏭ WhatsApp Web kendi mesajımız, atlanıyor: "${text.substring(0, 40)}"`);
-                return;
+                io.to(`company:${companyId}`).emit('whatsapp-web:status', { status: 'connected', phone, name });
             }
 
-            // Gönderen bilgisi
-            const contact = await msg.getContact().catch(() => null);
-            const senderPhone = msg.from.replace('@c.us', '');
-            const senderName = contact?.pushname || contact?.name || '';
+            // Bağlantı kapandı
+            if (connection === 'close') {
+                const statusCode = lastDisconnect?.error?.output?.statusCode;
+                const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
 
-            console.log(`📨 WhatsApp Web (company: ${companyId}): ${senderName || senderPhone} → "${text.substring(0, 60)}"`);
+                console.log(`❌ Baileys bağlantı kesildi (company: ${companyId}), code: ${statusCode}, reconnect: ${shouldReconnect}`);
 
-            await processIncomingMessage(db, io, {
-                company_id: companyId,
-                platform_id: senderPhone,
-                content: text,
-                source: 'whatsapp',
-                customer_name: senderName || null,
-                phone: senderPhone
-            });
-        } catch (err) {
-            console.error(`WhatsApp Web mesaj işleme hatası (company: ${companyId}):`, err.message);
-        }
-    });
+                clients.delete(companyId);
+                qrCodes.delete(companyId);
 
-    clients.set(companyId, client);
+                if (statusCode === DisconnectReason.loggedOut) {
+                    // Oturum kapatıldı — auth dosyalarını temizle
+                    clientStatus.set(companyId, { status: 'disconnected', phone: null, name: null });
+                    try {
+                        fs.rmSync(authDir, { recursive: true, force: true });
+                    } catch (e) { }
 
-    // Client'ı başlat (fire-and-forget — QR polling ile takip edilecek)
-    console.log(`🔄 WhatsApp Web client.initialize() başlatılıyor (company: ${companyId})...`);
-    client.initialize().then(() => {
-        console.log(`✅ WhatsApp Web client.initialize() tamamlandı (company: ${companyId})`);
-    }).catch((err) => {
-        console.error(`❌ WhatsApp Web başlatma hatası (company: ${companyId}):`, err.message);
+                    // DB'de pasife çek
+                    try {
+                        db.prepare(
+                            "UPDATE integration_settings SET is_active = 0, updated_at = ? WHERE company_id = ? AND platform = 'whatsapp' AND provider = 'whatsapp-web'"
+                        ).run(new Date().toISOString(), companyId);
+                    } catch (e) { }
+
+                    io.to(`company:${companyId}`).emit('whatsapp-web:status', { status: 'disconnected' });
+                } else if (shouldReconnect) {
+                    // Otomatik yeniden bağlan
+                    console.log(`🔄 Baileys yeniden bağlanıyor (company: ${companyId})...`);
+                    clientStatus.set(companyId, { status: 'reconnecting', phone: null, name: null });
+                    setTimeout(() => {
+                        initClient(db, io, companyId).catch(err => {
+                            console.error(`Baileys reconnect hatası (company: ${companyId}):`, err.message);
+                        });
+                    }, 3000);
+                }
+            }
+        });
+
+        // Gelen mesajlar
+        sock.ev.on('messages.upsert', async ({ messages, type }) => {
+            if (type !== 'notify') return;
+
+            for (const msg of messages) {
+                try {
+                    // Kendi gönderdiğimiz mesajları atla
+                    if (msg.key.fromMe) continue;
+
+                    // Sadece text mesajlar
+                    const text = msg.message?.conversation
+                        || msg.message?.extendedTextMessage?.text
+                        || null;
+                    if (!text) continue;
+
+                    // Dedup kontrolü
+                    const msgId = msg.key.id;
+                    if (isDuplicate(msgId)) continue;
+
+                    // Kendi gönderdiğimiz içeriği geri alıyorsak atla
+                    if (wasSentByUs(text)) {
+                        console.log(`⏭ Baileys kendi mesajımız, atlanıyor: "${text.substring(0, 40)}"`);
+                        continue;
+                    }
+
+                    // Gönderen bilgisi
+                    const senderJid = msg.key.remoteJid;
+                    const senderPhone = senderJid?.replace('@s.whatsapp.net', '') || '';
+                    const senderName = msg.pushName || '';
+
+                    console.log(`📨 Baileys (company: ${companyId}): ${senderName || senderPhone} → "${text.substring(0, 60)}"`);
+
+                    await processIncomingMessage(db, io, {
+                        company_id: companyId,
+                        platform_id: senderPhone,
+                        content: text,
+                        source: 'whatsapp',
+                        customer_name: senderName || null,
+                        phone: senderPhone
+                    });
+                } catch (err) {
+                    console.error(`Baileys mesaj işleme hatası (company: ${companyId}):`, err.message);
+                }
+            }
+        });
+
+        clients.set(companyId, sock);
+        return { status: 'initializing' };
+    } catch (err) {
+        console.error(`❌ Baileys başlatma hatası (company: ${companyId}):`, err.message);
         console.error(`❌ Stack:`, err.stack?.substring(0, 500));
         clientStatus.set(companyId, { status: 'error', phone: null, name: null, error: err.message });
-        clients.delete(companyId);
-    });
-
-    return { status: 'initializing' };
+        return { status: 'error', error: err.message };
+    }
 }
 
 async function disconnectClient(db, companyId) {
-    const client = clients.get(companyId);
-    if (client) {
+    const sock = clients.get(companyId);
+    if (sock) {
         try {
-            await client.logout();
-            await client.destroy();
+            await sock.logout();
+        } catch (e) { }
+        try {
+            sock.end();
         } catch (e) { }
         clients.delete(companyId);
     }
     qrCodes.delete(companyId);
     clientStatus.set(companyId, { status: 'disconnected', phone: null, name: null });
+
+    // Auth dosyalarını temizle
+    const authDir = path.join(__dirname, '..', '.wwebjs_auth', `company_${companyId}`);
+    try {
+        fs.rmSync(authDir, { recursive: true, force: true });
+    } catch (e) { }
 
     // DB güncelle
     try {
@@ -203,18 +235,17 @@ async function disconnectClient(db, companyId) {
 }
 
 async function sendMessage(companyId, phone, text) {
-    const client = clients.get(companyId);
-    if (!client) {
+    const sock = clients.get(companyId);
+    if (!sock) {
         return { sent: false, reason: 'client_not_connected' };
     }
 
-    const state = await client.getState().catch(() => null);
-    if (state !== 'CONNECTED') {
+    if (!sock.user) {
         return { sent: false, reason: 'not_connected' };
     }
 
     try {
-        // Telefon numarasını normalize et (başındaki + ve 0'ları temizle)
+        // Telefon numarasını normalize et
         let normalized = phone.replace(/[\s\-\(\)]/g, '');
         if (normalized.startsWith('+')) normalized = normalized.slice(1);
         // Türkiye: 0 ile başlıyorsa 90'a çevir
@@ -222,13 +253,13 @@ async function sendMessage(companyId, phone, text) {
             normalized = '9' + normalized;
         }
 
-        const chatId = normalized + '@c.us';
-        await client.sendMessage(chatId, text);
+        const jid = normalized + '@s.whatsapp.net';
+        await sock.sendMessage(jid, { text });
         markAsSent(text);
-        console.log(`📤 WhatsApp Web mesaj gönderildi (company: ${companyId}): "${text.substring(0, 50)}"`);
+        console.log(`📤 Baileys mesaj gönderildi (company: ${companyId}): "${text.substring(0, 50)}"`);
         return { sent: true, provider: 'whatsapp-web' };
     } catch (err) {
-        console.error(`WhatsApp Web mesaj gönderme hatası:`, err.message);
+        console.error(`Baileys mesaj gönderme hatası:`, err.message);
         return { sent: false, reason: err.message };
     }
 }
@@ -241,14 +272,13 @@ async function autoReconnect(db, io) {
         ).all();
 
         for (const integ of activeIntegrations) {
-            console.log(`🔄 WhatsApp Web otomatik yeniden bağlanıyor (company: ${integ.company_id})`);
-            // Hata olursa sessizce geç (session yoksa QR bekleyecek)
+            console.log(`🔄 Baileys otomatik yeniden bağlanıyor (company: ${integ.company_id})`);
             initClient(db, io, integ.company_id).catch(err => {
-                console.warn(`WhatsApp Web auto-reconnect hatası (company: ${integ.company_id}):`, err.message);
+                console.warn(`Baileys auto-reconnect hatası (company: ${integ.company_id}):`, err.message);
             });
         }
     } catch (err) {
-        console.warn('WhatsApp Web auto-reconnect genel hatası:', err.message);
+        console.warn('Baileys auto-reconnect genel hatası:', err.message);
     }
 }
 
