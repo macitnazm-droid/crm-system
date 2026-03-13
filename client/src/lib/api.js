@@ -111,9 +111,30 @@ export const integrationsAPI = {
 
 // Appointments
 export const appointmentsAPI = {
-    list: () => api.get('/appointments'),
+    list: (params) => api.get('/appointments', { params }),
+    create: (data) => api.post('/appointments', data),
+    update: (id, data) => api.patch(`/appointments/${id}`, data),
     updateStatus: (id, status) => api.patch(`/appointments/${id}/status`, { status }),
+    delete: (id) => api.delete(`/appointments/${id}`),
+    availableSlots: (params) => api.get('/appointments/available-slots', { params }),
     scan: () => api.post('/appointments/scan'),
+    // Hizmetler
+    getServices: () => api.get('/appointments/services'),
+    createService: (data) => api.post('/appointments/services', data),
+    updateService: (id, data) => api.patch(`/appointments/services/${id}`, data),
+    deleteService: (id) => api.delete(`/appointments/services/${id}`),
+    // Personel
+    getStaff: () => api.get('/appointments/staff'),
+    createStaff: (data) => api.post('/appointments/staff', data),
+    updateStaff: (id, data) => api.patch(`/appointments/staff/${id}`, data),
+    deleteStaff: (id) => api.delete(`/appointments/staff/${id}`),
+    // Odalar
+    getRooms: () => api.get('/appointments/rooms'),
+    createRoom: (data) => api.post('/appointments/rooms', data),
+    deleteRoom: (id) => api.delete(`/appointments/rooms/${id}`),
+    // Çalışma Saatleri
+    getWorkingHours: (params) => api.get('/appointments/working-hours', { params }),
+    saveWorkingHours: (data) => api.post('/appointments/working-hours', data),
 };
 
 // Super Admin

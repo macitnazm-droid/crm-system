@@ -108,6 +108,24 @@ function initDB() {
     }
   } catch (err) { }
 
+  // Migration: appointments tablosuna yeni randevu sistemi sütunları ekle
+  try {
+    const apptInfo = db.prepare(`PRAGMA table_info(appointments)`).all();
+    const addCol = (name, def) => {
+      if (apptInfo.length > 0 && !apptInfo.some(c => c.name === name)) {
+        db.exec(`ALTER TABLE appointments ADD COLUMN ${name} ${def}`);
+      }
+    };
+    addCol('staff_id', 'INTEGER');
+    addCol('service_id', 'INTEGER');
+    addCol('room_id', 'INTEGER');
+    addCol('appointment_date', 'TEXT');
+    addCol('start_time', 'TEXT');
+    addCol('end_time', 'TEXT');
+    addCol('source', "TEXT DEFAULT 'manual'");
+    addCol('reminder_sent', 'INTEGER DEFAULT 0');
+  } catch (err) { }
+
   // 2.1 Special Migration: Users tablosundaki ROLE kısıtlamasını güncelle
   try {
     const userTableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get();
@@ -244,8 +262,61 @@ function initDB() {
       phone TEXT,
       appointment_time TEXT,
       notes TEXT,
-      status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'confirmed', 'cancelled')),
+      status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'confirmed', 'cancelled', 'completed', 'no_show')),
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      staff_id INTEGER,
+      service_id INTEGER,
+      room_id INTEGER,
+      appointment_date TEXT,
+      start_time TEXT,
+      end_time TEXT,
+      source TEXT DEFAULT 'manual',
+      reminder_sent INTEGER DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS services (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      company_id INTEGER REFERENCES companies(id),
+      name TEXT NOT NULL,
+      duration INTEGER DEFAULT 60,
+      price REAL DEFAULT 0,
+      color TEXT DEFAULT '#6366f1',
+      is_active INTEGER DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS staff (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      company_id INTEGER REFERENCES companies(id),
+      name TEXT NOT NULL,
+      phone TEXT DEFAULT '',
+      role TEXT DEFAULT '',
+      avatar_color TEXT DEFAULT '#6366f1',
+      is_active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS staff_services (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      staff_id INTEGER REFERENCES staff(id),
+      service_id INTEGER REFERENCES services(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS working_hours (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      company_id INTEGER REFERENCES companies(id),
+      staff_id INTEGER,
+      day_of_week INTEGER NOT NULL,
+      start_time TEXT NOT NULL,
+      end_time TEXT NOT NULL,
+      is_off INTEGER DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS rooms (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      company_id INTEGER REFERENCES companies(id),
+      name TEXT NOT NULL,
+      is_active INTEGER DEFAULT 1
     );
 
     CREATE INDEX IF NOT EXISTS idx_users_company ON users(company_id);

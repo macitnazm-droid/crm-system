@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
     LayoutDashboard, MessageSquare, Users, BarChart3, Settings,
-    Radio, LogOut, Zap
+    Radio, LogOut, Zap, CalendarDays
 } from 'lucide-react';
 import logo from '../assets/logo.png';
 import './Sidebar.css';
@@ -14,6 +14,7 @@ export default function Sidebar() {
         { to: '/', icon: LayoutDashboard, label: 'Dashboard', end: true },
         { to: '/conversations', icon: MessageSquare, label: 'Konuşmalar' },
         { to: '/customers', icon: Users, label: 'Müşteriler' },
+        { to: '/appointments', icon: CalendarDays, label: 'Randevular' },
         { to: '/reports', icon: BarChart3, label: 'Raporlar' },
         { to: '/settings', icon: Settings, label: 'Ayarlar' },
         { to: '/simulator', icon: Radio, label: 'Simülatör' },
