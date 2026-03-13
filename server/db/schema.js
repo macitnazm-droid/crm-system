@@ -33,11 +33,17 @@ function initDB() {
     } catch (err) { }
   });
 
-  // Migration: customers tablosuna unipile_chat_id ekle
+  // Migration: customers tablosuna unipile_chat_id, profile_pic, instagram_username ekle
   try {
     const custInfo = db.prepare(`PRAGMA table_info(customers)`).all();
     if (custInfo.length > 0 && !custInfo.some(c => c.name === 'unipile_chat_id')) {
       db.exec(`ALTER TABLE customers ADD COLUMN unipile_chat_id TEXT DEFAULT ''`);
+    }
+    if (custInfo.length > 0 && !custInfo.some(c => c.name === 'profile_pic')) {
+      db.exec(`ALTER TABLE customers ADD COLUMN profile_pic TEXT DEFAULT ''`);
+    }
+    if (custInfo.length > 0 && !custInfo.some(c => c.name === 'instagram_username')) {
+      db.exec(`ALTER TABLE customers ADD COLUMN instagram_username TEXT DEFAULT ''`);
     }
   } catch (err) { }
 

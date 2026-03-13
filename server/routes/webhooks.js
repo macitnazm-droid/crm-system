@@ -43,6 +43,7 @@ router.post('/instagram', async (req, res) => {
 
                 // Instagram Messaging webhook: entry[].messaging[]
                 const messaging = e.messaging || [];
+                const activeIntegration = integration || db.prepare("SELECT * FROM integration_settings WHERE platform = 'instagram' AND provider = 'meta' AND is_active = 1 LIMIT 1").get();
                 for (const event of messaging) {
                     // Echo kontrolü — kendi gönderdiğimiz mesajları atla
                     if (event.message?.is_echo) {
@@ -54,12 +55,37 @@ router.post('/instagram', async (req, res) => {
                     const messageText = event.message?.text;
 
                     if (senderId && messageText) {
-                        console.log(`📨 Meta IG: ${senderId} → "${messageText.substring(0, 60)}"`);
+                        // Graph API'den kullanıcı profil bilgisi çek
+                        let customerName = null;
+                        let profilePic = null;
+                        let username = null;
+                        if (activeIntegration?.api_key) {
+                            try {
+                                const fetch = (await import('node-fetch')).default;
+                                const profileRes = await fetch(
+                                    `https://graph.facebook.com/v21.0/${senderId}?fields=name,username,profile_pic&access_token=${activeIntegration.api_key}`
+                                );
+                                if (profileRes.ok) {
+                                    const profile = await profileRes.json();
+                                    customerName = profile.name || profile.username || null;
+                                    username = profile.username || null;
+                                    profilePic = profile.profile_pic || null;
+                                    console.log(`👤 IG Profil: ${customerName} (@${username})`);
+                                }
+                            } catch (profileErr) {
+                                console.warn('IG profil çekme hatası:', profileErr.message);
+                            }
+                        }
+
+                        console.log(`📨 Meta IG: ${customerName || senderId} → "${messageText.substring(0, 60)}"`);
                         await processIncomingMessage(db, io, {
                             company_id: companyId,
                             platform_id: senderId,
                             content: messageText,
-                            source: 'instagram'
+                            source: 'instagram',
+                            customer_name: customerName,
+                            profile_pic: profilePic,
+                            username: username
                         });
                     }
                 }
@@ -220,7 +246,7 @@ router.post('/simulate', async (req, res) => {
 
 // Gelen mesajı işle
 async function processIncomingMessage(db, io, data) {
-    const { company_id, platform_id, content, source, customer_name, phone, instagram_id, unipile_chat_id } = data;
+    const { company_id, platform_id, content, source, customer_name, phone, instagram_id, unipile_chat_id, profile_pic, username } = data;
     const now = new Date().toISOString();
 
     // Duplikasyon kontrolü: Aynı müşteriden, aynı içerikle, son 60 saniye içinde mesaj var mı?
@@ -258,8 +284,8 @@ async function processIncomingMessage(db, io, data) {
     if (!customer) {
         // Yeni müşteri oluştur
         const result = db.prepare(`
-      INSERT INTO customers (company_id, name, phone, instagram_id, whatsapp_id, source, last_message_at, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO customers (company_id, name, phone, instagram_id, whatsapp_id, source, last_message_at, profile_pic, instagram_username, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
             company_id,
             customer_name || `Müşteri ${platform_id.substring(0, 8)}`,
@@ -267,11 +293,30 @@ async function processIncomingMessage(db, io, data) {
             source === 'instagram' ? (instagram_id || platform_id) : null,
             source === 'whatsapp' ? platform_id : null,
             source,
-            now, now, now
+            now,
+            profile_pic || '',
+            username || '',
+            now, now
         );
         customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(result.lastInsertRowid);
     } else {
-        db.prepare('UPDATE customers SET last_message_at = ?, updated_at = ? WHERE id = ? AND company_id = ?').run(now, now, customer.id, company_id);
+        // Mevcut müşterinin ismini güncelle (eğer hâlâ "Müşteri xxx" ise ve gerçek isim geldiyse)
+        const updates = ['last_message_at = ?', 'updated_at = ?'];
+        const params = [now, now];
+        if (customer_name && customer.name.startsWith('Müşteri ')) {
+            updates.push('name = ?');
+            params.push(customer_name);
+        }
+        if (profile_pic) {
+            updates.push('profile_pic = ?');
+            params.push(profile_pic);
+        }
+        if (username && source === 'instagram') {
+            updates.push('instagram_username = ?');
+            params.push(username);
+        }
+        params.push(customer.id, company_id);
+        db.prepare(`UPDATE customers SET ${updates.join(', ')} WHERE id = ? AND company_id = ?`).run(...params);
     }
 
     // 2. Konuşmayı bul veya oluştur
