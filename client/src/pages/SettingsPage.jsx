@@ -169,7 +169,12 @@ export default function SettingsPage() {
                                 </div>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{igForm.is_active ? 'Aktif' : 'Pasif'}</span>
+                                {igForm.is_active && (
+                                    <span className="badge" style={{ fontSize: 10, background: igForm.provider === 'meta' ? 'rgba(59,130,246,0.12)' : 'rgba(139,92,246,0.12)', color: igForm.provider === 'meta' ? '#3b82f6' : '#8b5cf6', border: `1px solid ${igForm.provider === 'meta' ? 'rgba(59,130,246,0.3)' : 'rgba(139,92,246,0.3)'}` }}>
+                                        {igForm.provider === 'meta' ? 'Meta' : 'Unipile'}
+                                    </span>
+                                )}
+                                <span style={{ fontSize: 12, color: igForm.is_active ? 'var(--success)' : 'var(--text-muted)' }}>{igForm.is_active ? 'Aktif' : 'Pasif'}</span>
                                 <div className={`toggle ${igForm.is_active ? 'active' : ''}`}
                                     onClick={() => setIgForm(prev => ({ ...prev, is_active: !prev.is_active }))} />
                             </div>
@@ -301,7 +306,12 @@ export default function SettingsPage() {
                                 </div>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{waForm.is_active ? 'Aktif' : 'Pasif'}</span>
+                                {waForm.is_active && (
+                                    <span className="badge" style={{ fontSize: 10, background: waForm.provider === 'meta' ? 'rgba(59,130,246,0.12)' : 'rgba(139,92,246,0.12)', color: waForm.provider === 'meta' ? '#3b82f6' : '#8b5cf6', border: `1px solid ${waForm.provider === 'meta' ? 'rgba(59,130,246,0.3)' : 'rgba(139,92,246,0.3)'}` }}>
+                                        {waForm.provider === 'meta' ? 'Meta' : 'Unipile'}
+                                    </span>
+                                )}
+                                <span style={{ fontSize: 12, color: waForm.is_active ? 'var(--success)' : 'var(--text-muted)' }}>{waForm.is_active ? 'Aktif' : 'Pasif'}</span>
                                 <div className={`toggle ${waForm.is_active ? 'active' : ''}`}
                                     onClick={() => setWaForm(prev => ({ ...prev, is_active: !prev.is_active }))} />
                             </div>
