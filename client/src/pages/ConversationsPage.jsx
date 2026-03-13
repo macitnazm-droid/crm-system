@@ -4,7 +4,7 @@ import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
 import {
     Send, Bot, BotOff, User, Clock, Instagram, MessageCircle,
-    Sparkles, Search, Filter, ChevronDown
+    Sparkles, Search, Filter, ChevronDown, Phone
 } from 'lucide-react';
 
 export default function ConversationsPage() {
@@ -169,8 +169,11 @@ export default function ConversationsPage() {
                                 {conv.customer_name?.charAt(0)?.toUpperCase() || '?'}
                             </div>
                             <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 2 }}>
                                     <span style={{ fontWeight: 600, fontSize: 13 }}>{conv.customer_name}</span>
+                                    {conv.customer_source === 'instagram' && <Instagram size={13} style={{ color: '#E1306C', flexShrink: 0 }} />}
+                                    {conv.customer_source === 'whatsapp' && <Phone size={13} style={{ color: '#25D366', flexShrink: 0 }} />}
+                                    {conv.customer_source === 'messenger' && <MessageCircle size={13} style={{ color: '#006AFF', flexShrink: 0 }} />}
                                     <span className={`badge ${getCatClass(conv.customer_category)}`} style={{ fontSize: 9, padding: '1px 6px' }}>
                                         {conv.customer_category?.toUpperCase()}
                                     </span>
