@@ -538,9 +538,87 @@ async function processIncomingMessage(db, io, data) {
         }
 
         const prompt = db.prepare('SELECT * FROM ai_prompts WHERE company_id = ? AND is_active = 1 ORDER BY id DESC LIMIT 1').get(company_id);
-        const systemPrompt = prompt?.system_prompt || 'Sen bir satış asistanısın.';
+        let systemPrompt = prompt?.system_prompt || 'Sen bir satış asistanısın.';
+
+        // Randevu bilgilerini AI'ya ver
+        try {
+            const servicesData = db.prepare('SELECT name, duration, price FROM services WHERE company_id = ? AND is_active = 1').all(company_id);
+            const staffData = db.prepare('SELECT name, role FROM staff WHERE company_id = ? AND is_active = 1').all(company_id);
+
+            if (servicesData.length > 0 || staffData.length > 0) {
+                const today = new Date().toISOString().split('T')[0];
+                const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+
+                // Bugün ve yarın için mevcut randevuları al
+                const todayAppts = db.prepare(
+                    "SELECT start_time, end_time, staff_id, customer_name FROM appointments WHERE company_id = ? AND appointment_date = ? AND status NOT IN ('cancelled') ORDER BY start_time"
+                ).all(company_id, today);
+                const tomorrowAppts = db.prepare(
+                    "SELECT start_time, end_time, staff_id, customer_name FROM appointments WHERE company_id = ? AND appointment_date = ? AND status NOT IN ('cancelled') ORDER BY start_time"
+                ).all(company_id, tomorrow);
+
+                let apptContext = '\n\n--- RANDEVU SİSTEMİ BİLGİLERİ ---';
+                if (servicesData.length > 0) {
+                    apptContext += '\nHizmetler: ' + servicesData.map(s => `${s.name} (${s.duration}dk${s.price > 0 ? ', ' + s.price + '₺' : ''})`).join(', ');
+                }
+                if (staffData.length > 0) {
+                    apptContext += '\nPersonel: ' + staffData.map(s => `${s.name}${s.role ? ' (' + s.role + ')' : ''}`).join(', ');
+                }
+
+                apptContext += `\nBugün (${today}) dolu saatler: ` + (todayAppts.length > 0 ? todayAppts.map(a => `${a.start_time}-${a.end_time}`).join(', ') : 'Boş');
+                apptContext += `\nYarın (${tomorrow}) dolu saatler: ` + (tomorrowAppts.length > 0 ? tomorrowAppts.map(a => `${a.start_time}-${a.end_time}`).join(', ') : 'Boş');
+                apptContext += '\nÇalışma saatleri: 09:00-19:00';
+                apptContext += '\n\nMüşteri randevu almak isterse müsait saatleri öner. Müşteri onaylarsa yanıtının sonuna şu formatta ekle: [RANDEVU: tarih=YYYY-MM-DD, saat=HH:MM, hizmet=Hizmet Adı, personel=Personel Adı]';
+                apptContext += '\nÖrnek: [RANDEVU: tarih=2026-03-15, saat=14:00, hizmet=Manikür, personel=Büşra]';
+                apptContext += '\n--- RANDEVU SİSTEMİ BİLGİLERİ SONU ---';
+
+                systemPrompt += apptContext;
+            }
+        } catch (e) {
+            console.error('Randevu context hatası:', e.message);
+        }
 
         const aiResponse = await aiService.generateResponse(messages, systemPrompt, customer);
+
+        // AI yanıtında randevu talimatı varsa otomatik kaydet
+        try {
+            const apptMatch = aiResponse.content.match(/\[RANDEVU:\s*tarih=(\d{4}-\d{2}-\d{2}),\s*saat=(\d{2}:\d{2}),\s*hizmet=([^,\]]+)(?:,\s*personel=([^\]]+))?\]/);
+            if (apptMatch) {
+                const [, apptDate, apptTime, serviceName, staffName] = apptMatch;
+
+                // Hizmeti bul
+                const svc = db.prepare('SELECT id, duration FROM services WHERE company_id = ? AND name LIKE ? AND is_active = 1').get(company_id, `%${serviceName.trim()}%`);
+                // Personeli bul
+                const stf = staffName ? db.prepare('SELECT id FROM staff WHERE company_id = ? AND name LIKE ? AND is_active = 1').get(company_id, `%${staffName.trim()}%`) : null;
+
+                // Bitiş saati hesapla
+                const dur = svc?.duration || 60;
+                const [h, m] = apptTime.split(':').map(Number);
+                const endMin = h * 60 + m + dur;
+                const endTime = `${String(Math.floor(endMin / 60)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}`;
+
+                db.prepare(`
+                    INSERT INTO appointments (company_id, customer_id, conversation_id, customer_name, phone, staff_id, service_id, appointment_date, start_time, end_time, notes, status, source, appointment_time)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', 'ai', ?)
+                `).run(
+                    company_id, customer.id, conversation.id,
+                    customer.name || customer_name || '', customer.phone || phone || '',
+                    stf?.id || null, svc?.id || null,
+                    apptDate, apptTime, endTime,
+                    serviceName.trim(), `${apptDate} ${apptTime}`
+                );
+
+                console.log(`📅 AI randevu oluşturdu: ${customer.name} → ${apptDate} ${apptTime} (${serviceName.trim()})`);
+
+                // Randevu tag'ını yanıttan temizle
+                aiResponse.content = aiResponse.content.replace(/\s*\[RANDEVU:[^\]]+\]/, '').trim();
+
+                // Real-time bildirim
+                io.to(`company:${company_id}`).emit('appointment:new', {});
+            }
+        } catch (apptErr) {
+            console.error('AI randevu kayıt hatası:', apptErr.message);
+        }
 
         const aiMsgResult = db.prepare(`
       INSERT INTO messages (company_id, conversation_id, customer_id, content, source, direction, is_ai_generated, ai_model, created_at)
