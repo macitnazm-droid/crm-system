@@ -49,6 +49,79 @@ app.use('/api/auth/register', authLimiter);
 
 // DB başlat
 const db = initDB();
+
+// Force fix: Messages tablosu messenger desteği (CHECK constraint)
+try {
+  const msgSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='messages'").get();
+  console.log('🔍 [INDEX] Messages CHECK:', msgSql?.sql?.includes('messenger') ? 'OK' : 'MISSING messenger');
+  if (msgSql && !msgSql.sql.includes('messenger')) {
+    console.log('🔧 [INDEX] Messages tablosu zorla güncelleniyor...');
+    db.pragma('foreign_keys = OFF');
+    db.exec('DROP TABLE IF EXISTS messages_old');
+    const oldCols = db.prepare('PRAGMA table_info(messages)').all().map(c => c.name);
+    db.exec('ALTER TABLE messages RENAME TO messages_old');
+    db.exec(`
+      CREATE TABLE messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        company_id INTEGER REFERENCES companies(id),
+        conversation_id INTEGER NOT NULL REFERENCES conversations(id),
+        customer_id INTEGER NOT NULL REFERENCES customers(id),
+        user_id INTEGER REFERENCES users(id),
+        content TEXT NOT NULL,
+        source TEXT DEFAULT 'instagram' CHECK(source IN ('instagram', 'whatsapp', 'messenger', 'api', 'manual')),
+        direction TEXT NOT NULL CHECK(direction IN ('inbound', 'outbound')),
+        is_ai_generated INTEGER DEFAULT 0,
+        ai_model TEXT,
+        is_manual_override INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    const newCols = db.prepare('PRAGMA table_info(messages)').all().map(c => c.name);
+    const common = oldCols.filter(c => newCols.includes(c)).join(', ');
+    db.exec(`INSERT INTO messages (${common}) SELECT ${common} FROM messages_old`);
+    db.exec('DROP TABLE messages_old');
+    db.pragma('foreign_keys = ON');
+    console.log('✅ [INDEX] Messages tablosu messenger desteği eklendi!');
+  }
+
+  // Customers tablosu da kontrol et
+  const custSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='customers'").get();
+  if (custSql && !custSql.sql.includes('messenger')) {
+    console.log('🔧 [INDEX] Customers tablosu zorla güncelleniyor...');
+    db.pragma('foreign_keys = OFF');
+    db.exec('DROP TABLE IF EXISTS customers_old');
+    const oldCols = db.prepare('PRAGMA table_info(customers)').all().map(c => c.name);
+    db.exec('ALTER TABLE customers RENAME TO customers_old');
+    db.exec(`
+      CREATE TABLE customers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        company_id INTEGER REFERENCES companies(id),
+        phone TEXT, instagram_id TEXT, whatsapp_id TEXT,
+        messenger_id TEXT DEFAULT '',
+        name TEXT NOT NULL, email TEXT,
+        category TEXT DEFAULT 'cold' CHECK(category IN ('hot', 'warm', 'cold', 'unqualified')),
+        lead_score INTEGER DEFAULT 0,
+        source TEXT DEFAULT 'instagram' CHECK(source IN ('instagram', 'whatsapp', 'messenger', 'api', 'manual')),
+        last_message_at DATETIME,
+        unipile_chat_id TEXT DEFAULT '',
+        profile_pic TEXT DEFAULT '',
+        instagram_username TEXT DEFAULT '',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    const newCols = db.prepare('PRAGMA table_info(customers)').all().map(c => c.name);
+    const common = oldCols.filter(c => newCols.includes(c)).join(', ');
+    db.exec(`INSERT INTO customers (${common}) SELECT ${common} FROM customers_old`);
+    db.exec('DROP TABLE customers_old');
+    db.pragma('foreign_keys = ON');
+    console.log('✅ [INDEX] Customers tablosu messenger desteği eklendi!');
+  }
+} catch (forceErr) {
+  console.error('❌ [INDEX] Force migration error:', forceErr.message);
+  try { db.pragma('foreign_keys = ON'); } catch(e) {}
+}
+
 app.locals.db = db;
 
 // Socket.io kurulum
