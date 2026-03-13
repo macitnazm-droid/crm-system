@@ -81,10 +81,10 @@ function initDB() {
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
           )
         `);
-        // Eski kolonları yeniye kopyala (messenger_id olmayabilir, default '' olur)
-        const oldCols = cols.map(c => c.name);
-        const safeCols = oldCols.filter(c => c !== 'messenger_id').join(', ');
-        db.exec(`INSERT INTO customers (${safeCols}) SELECT ${safeCols} FROM customers_old`);
+        // Eski kolonları yeniye kopyala (ortak kolonları bul)
+        const newCols = db.prepare('PRAGMA table_info(customers)').all().map(c => c.name);
+        const commonCols = cols.map(c => c.name).filter(c => newCols.includes(c)).join(', ');
+        db.exec(`INSERT INTO customers (${commonCols}) SELECT ${commonCols} FROM customers_old`);
         db.exec(`DROP TABLE customers_old`);
       })();
       db.pragma('foreign_keys = ON');
@@ -101,6 +101,7 @@ function initDB() {
       console.log('🔄 Messages tablosu güncelleniyor (messenger desteği)...');
       db.pragma('foreign_keys = OFF');
       db.transaction(() => {
+        const oldCols = db.prepare('PRAGMA table_info(messages)').all().map(c => c.name);
         db.exec(`ALTER TABLE messages RENAME TO messages_old`);
         db.exec(`
           CREATE TABLE messages (
@@ -118,10 +119,13 @@ function initDB() {
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
           )
         `);
-        db.exec(`INSERT INTO messages SELECT * FROM messages_old`);
+        const newCols = db.prepare('PRAGMA table_info(messages)').all().map(c => c.name);
+        const commonCols = oldCols.filter(c => newCols.includes(c)).join(', ');
+        db.exec(`INSERT INTO messages (${commonCols}) SELECT ${commonCols} FROM messages_old`);
         db.exec(`DROP TABLE messages_old`);
       })();
       db.pragma('foreign_keys = ON');
+      console.log('✅ Messages tablosu messenger desteği eklendi');
     }
   } catch (err) {
     console.error('Messages messenger migration error:', err.message);
@@ -157,7 +161,9 @@ function initDB() {
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
           )
         `);
-        db.exec(`INSERT INTO integration_settings (${colNames}) SELECT ${colNames} FROM integration_settings_old`);
+        const newCols = db.prepare('PRAGMA table_info(integration_settings)').all().map(c => c.name);
+        const commonCols = cols.map(c => c.name).filter(c => newCols.includes(c)).join(', ');
+        db.exec(`INSERT INTO integration_settings (${commonCols}) SELECT ${commonCols} FROM integration_settings_old`);
         db.exec(`DROP TABLE integration_settings_old`);
       })();
       db.pragma('foreign_keys = ON');
