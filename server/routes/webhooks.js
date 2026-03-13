@@ -628,6 +628,7 @@ async function processIncomingMessage(db, io, data) {
                     console.log(`📅 AI randevu oluşturdu: ${customer.name} → ${apptDate} ${apptTime} (${serviceName.trim()})`);
 
                 // Randevu onay bildirimi gönder (WhatsApp/SMS)
+                console.log(`📢 [WEBHOOK] Randevu bildirimi tetikleniyor: ${customer.name} → ${apptDate} ${apptTime}`);
                 sendAppointmentNotification(db, company_id, {
                     customer_name: customer.name || customer_name || '',
                     phone: customer.phone || phone || '',

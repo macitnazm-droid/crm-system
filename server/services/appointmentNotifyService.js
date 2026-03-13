@@ -44,7 +44,12 @@ async function sendAppointmentNotification(db, companyId, appointment, type = 'c
         'SELECT appointment_whatsapp_notify, appointment_sms_notify, sms_provider, sms_usercode, sms_password, sms_msgheader, appointment_reminder_minutes FROM companies WHERE id = ?'
     ).get(companyId);
 
-    if (!company) return;
+    if (!company) {
+        console.log(`⚠️ [NOTIFY] Company bulunamadı: ${companyId}`);
+        return;
+    }
+
+    console.log(`📢 [NOTIFY] Bildirim kontrolü: whatsapp=${company.appointment_whatsapp_notify}, sms=${company.appointment_sms_notify}, phone=${appointment.phone}, type=${type}`);
 
     // Hizmet ve personel adını al
     let serviceName = null;
