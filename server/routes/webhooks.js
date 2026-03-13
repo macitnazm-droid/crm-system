@@ -572,7 +572,7 @@ async function processIncomingMessage(db, io, data) {
                 apptContext += '\n\nÖNEMLİ KURALLAR:';
                 apptContext += '\n- Yukarıdaki dolu saatlere KESİNLİKLE randevu verme! Dolu olan saate randevu istenmişse "bu saat dolu, şu saatler müsait" de.';
                 apptContext += '\n- HİZMET SÜRESİNİ HESABA KAT! Örneğin 90dk\'lık bir hizmet için 14:00 istendiyse 14:00-15:30 arası dolu olur. Eğer 15:00\'da başka randevu varsa 14:00 UYGUN DEĞİLDİR çünkü çakışır. Randevu vermeden önce istenen saat + hizmet süresi aralığının tamamen boş olduğundan emin ol.';
-                apptContext += '\n- [RANDEVU: ...] tag\'ını SADECE müşteri açıkça yeni bir randevu talep ettiğinde ve tarih+saat netleştiğinde ve o saat MÜSAIT olduğunda ekle.';
+                apptContext += '\n- [RANDEVU: ...] tag\'ını SADECE müşteri açıkça yeni bir randevu talep ettiğinde ve tarih+saat netleştiğinde ve o saat MÜSAIT olduğunda ekle. Onay sorma, direkt oluştur.';
                 apptContext += '\n- Müşteri "teşekkür", "tamam", "görüşürüz" gibi kapanış mesajları gönderiyorsa ASLA randevu tag\'ı ekleme.';
                 apptContext += '\n- Zaten oluşturulmuş bir randevuyu tekrar oluşturma. Aynı kişi aynı saate tekrar isterse "zaten randevunuz var" de.';
                 apptContext += '\n- Müşteri adını sohbette kendisi belirttiyse O İSMİ KULLAN, WhatsApp profil adını değil. Örneğin müşteri "Şamil Tayyar için randevu" diyorsa isim "Şamil Tayyar" olmalı.';
@@ -613,10 +613,37 @@ async function processIncomingMessage(db, io, data) {
 
                 if (conflictQuery) {
                     console.log(`⚠️ AI randevu çakışması: ${apptDate} ${apptTime}-${endTime} çakışıyor (mevcut: ${conflictQuery.start_time}-${conflictQuery.end_time})`);
-                    // Tag'ı temizle ve AI yanıtını düzelt — kullanıcıya doğru bilgi ver
-                    aiResponse.content = aiResponse.content.replace(/\s*\[RANDEVU:[^\]]+\]/, '').trim();
-                    // AI "oluşturuldu" gibi bir şey dediyse, çakışma mesajı ekle
-                    aiResponse.content += `\n\n⚠️ Maalesef ${apptTime} saati uygun değil, ${conflictQuery.start_time}-${conflictQuery.end_time} arasında başka bir randevu bulunuyor. Lütfen farklı bir saat belirtin.`;
+
+                    // O günün müsait saatlerini hesapla
+                    const dayAppts = db.prepare(
+                        "SELECT start_time, end_time FROM appointments WHERE company_id = ? AND appointment_date = ? AND status NOT IN ('cancelled') ORDER BY start_time"
+                    ).all(company_id, apptDate);
+
+                    const availableSlots = [];
+                    const workStart = 9 * 60; // 09:00
+                    const workEnd = 19 * 60;  // 19:00
+                    let cursor = workStart;
+                    for (const a of dayAppts) {
+                        const [sh, sm] = a.start_time.split(':').map(Number);
+                        const [eh, em] = a.end_time.split(':').map(Number);
+                        const aStart = sh * 60 + sm;
+                        const aEnd = eh * 60 + em;
+                        // cursor ile randevu başlangıcı arasında yeterli boşluk var mı?
+                        if (aStart - cursor >= dur) {
+                            availableSlots.push(`${String(Math.floor(cursor / 60)).padStart(2, '0')}:${String(cursor % 60).padStart(2, '0')}`);
+                        }
+                        cursor = Math.max(cursor, aEnd);
+                    }
+                    if (workEnd - cursor >= dur) {
+                        availableSlots.push(`${String(Math.floor(cursor / 60)).padStart(2, '0')}:${String(cursor % 60).padStart(2, '0')}`);
+                    }
+
+                    const slotsText = availableSlots.length > 0
+                        ? `Müsait saatler: ${availableSlots.join(', ')}`
+                        : 'Maalesef o gün müsait saat bulunmuyor.';
+
+                    // AI'ın kendi metnini tamamen değiştir — çift mesaj sorunu olmasın
+                    aiResponse.content = `Üzgünüm, ${apptTime} saati uygun değil çünkü ${conflictQuery.start_time}-${conflictQuery.end_time} arasında başka bir randevu var.\n\n${slotsText}`;
                 } else {
                     // Müşteri adı: AI'ın sohbetten aldığı isim > DB'deki isim > WhatsApp profil adı
                     const apptCustomerName = customerNameFromAI?.trim() || customer.name || customer_name || '';
