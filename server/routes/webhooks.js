@@ -117,6 +117,110 @@ router.post('/instagram', async (req, res) => {
     }
 });
 
+// POST /api/webhooks/messenger — Meta Graph API Messenger webhook
+router.post('/messenger', async (req, res) => {
+    try {
+        const db = req.app.locals.db;
+        const io = req.app.locals.io;
+        const body = req.body;
+
+        console.log('📩 Messenger webhook:', JSON.stringify(body).substring(0, 1000));
+
+        if (body.object === 'page' && body.entry) {
+            for (const e of body.entry) {
+                const pageId = e.id;
+
+                const integration = db.prepare(
+                    "SELECT * FROM integration_settings WHERE platform = 'messenger' AND provider = 'meta' AND page_id = ? AND is_active = 1"
+                ).get(pageId);
+
+                if (!integration) {
+                    const fallback = db.prepare(
+                        "SELECT * FROM integration_settings WHERE platform = 'messenger' AND provider = 'meta' AND is_active = 1 LIMIT 1"
+                    ).get();
+                    if (!fallback) {
+                        console.warn(`Messenger webhook: page_id=${pageId} için aktif entegrasyon bulunamadı`);
+                        continue;
+                    }
+                    if (pageId) {
+                        db.prepare('UPDATE integration_settings SET page_id = ? WHERE id = ?').run(pageId, fallback.id);
+                    }
+                }
+
+                const companyId = (integration || db.prepare("SELECT * FROM integration_settings WHERE platform = 'messenger' AND provider = 'meta' AND is_active = 1 LIMIT 1").get())?.company_id;
+                if (!companyId) continue;
+
+                const activeIntegration = integration || db.prepare("SELECT * FROM integration_settings WHERE platform = 'messenger' AND provider = 'meta' AND is_active = 1 LIMIT 1").get();
+
+                const messaging = e.messaging || [];
+                for (const event of messaging) {
+                    if (event.message?.is_echo) {
+                        console.log('⏭ Messenger echo mesaj, atlanıyor');
+                        continue;
+                    }
+
+                    const senderId = event.sender?.id;
+                    const messageText = event.message?.text;
+
+                    if (senderId && messageText) {
+                        // Graph API'den kullanıcı profil bilgisi çek
+                        let customerName = null;
+                        let profilePic = null;
+                        if (activeIntegration?.api_key) {
+                            try {
+                                const fetch = (await import('node-fetch')).default;
+                                const profileRes = await fetch(
+                                    `https://graph.facebook.com/v21.0/${senderId}?fields=name,profile_pic&access_token=${activeIntegration.api_key}`
+                                );
+                                if (profileRes.ok) {
+                                    const profile = await profileRes.json();
+                                    customerName = profile.name || null;
+                                    profilePic = profile.profile_pic || null;
+                                    console.log(`👤 Messenger Profil: ${customerName}`);
+                                }
+                            } catch (profileErr) {
+                                console.warn('Messenger profil çekme hatası:', profileErr.message);
+                            }
+                        }
+
+                        console.log(`📨 Messenger: ${customerName || senderId} → "${messageText.substring(0, 60)}"`);
+                        await processIncomingMessage(db, io, {
+                            company_id: companyId,
+                            platform_id: senderId,
+                            content: messageText,
+                            source: 'messenger',
+                            customer_name: customerName,
+                            profile_pic: profilePic
+                        });
+                    }
+                }
+            }
+        }
+
+        res.status(200).json({ status: 'ok' });
+    } catch (err) {
+        console.error('Messenger webhook error:', err);
+        res.status(200).json({ status: 'error handled' });
+    }
+});
+
+// GET /api/webhooks/messenger — Meta Webhook doğrulama
+router.get('/messenger', (req, res) => {
+    const db = req.app.locals.db;
+    const integration = db.prepare(
+        "SELECT verify_token FROM integration_settings WHERE platform = 'messenger' AND provider = 'meta' AND is_active = 1 AND verify_token != '' LIMIT 1"
+    ).get();
+    const verifyToken = integration?.verify_token || process.env.MESSENGER_VERIFY_TOKEN || 'messenger_webhook_verify_token';
+
+    if (req.query['hub.verify_token'] === verifyToken && req.query['hub.challenge']) {
+        console.log('✅ Messenger webhook doğrulandı');
+        res.send(req.query['hub.challenge']);
+    } else {
+        console.warn(`❌ Messenger webhook doğrulama başarısız`);
+        res.status(403).send('Token geçersiz');
+    }
+});
+
 // GET /api/webhooks/instagram — Meta Webhook doğrulama
 router.get('/instagram', (req, res) => {
     const db = req.app.locals.db;
@@ -266,6 +370,13 @@ async function processIncomingMessage(db, io, data) {
             WHERE c.whatsapp_id = ? AND c.company_id = ? AND m.content = ? AND m.direction = 'inbound' AND m.created_at > ?
             LIMIT 1
         `).get(platform_id, company_id, content, sixtySecsAgo);
+    } else if (source === 'messenger') {
+        existingMsg = db.prepare(`
+            SELECT m.id FROM messages m
+            JOIN customers c ON m.customer_id = c.id
+            WHERE c.messenger_id = ? AND c.company_id = ? AND m.content = ? AND m.direction = 'inbound' AND m.created_at > ?
+            LIMIT 1
+        `).get(platform_id, company_id, content, sixtySecsAgo);
     }
 
     if (existingMsg) {
@@ -279,19 +390,22 @@ async function processIncomingMessage(db, io, data) {
         customer = db.prepare('SELECT * FROM customers WHERE instagram_id = ? AND company_id = ?').get(platform_id, company_id);
     } else if (source === 'whatsapp') {
         customer = db.prepare('SELECT * FROM customers WHERE whatsapp_id = ? AND company_id = ?').get(platform_id, company_id);
+    } else if (source === 'messenger') {
+        customer = db.prepare('SELECT * FROM customers WHERE messenger_id = ? AND company_id = ?').get(platform_id, company_id);
     }
 
     if (!customer) {
         // Yeni müşteri oluştur
         const result = db.prepare(`
-      INSERT INTO customers (company_id, name, phone, instagram_id, whatsapp_id, source, last_message_at, profile_pic, instagram_username, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO customers (company_id, name, phone, instagram_id, whatsapp_id, messenger_id, source, last_message_at, profile_pic, instagram_username, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
             company_id,
             customer_name || `Müşteri ${platform_id.substring(0, 8)}`,
             phone || null,
             source === 'instagram' ? (instagram_id || platform_id) : null,
             source === 'whatsapp' ? platform_id : null,
+            source === 'messenger' ? platform_id : null,
             source,
             now,
             profile_pic || '',

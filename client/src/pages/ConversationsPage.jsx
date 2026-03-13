@@ -227,6 +227,7 @@ export default function ConversationsPage() {
                                         </span>
                                         {convDetail?.customer_source === 'instagram' && <span className="badge badge-instagram" style={{ fontSize: 10 }}>Instagram</span>}
                                         {convDetail?.customer_source === 'whatsapp' && <span className="badge badge-whatsapp" style={{ fontSize: 10 }}>WhatsApp</span>}
+                                        {convDetail?.customer_source === 'messenger' && <span className="badge" style={{ fontSize: 10, background: 'rgba(0,106,255,0.12)', color: '#006AFF', border: '1px solid rgba(0,106,255,0.3)' }}>Messenger</span>}
                                     </div>
                                     <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
                                         Skor: {convDetail?.customer_lead_score || 0} • {convDetail?.customer_phone || convDetail?.customer_email || ''}

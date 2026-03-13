@@ -54,6 +54,30 @@ async function sendWhatsAppMessage(accessToken, phoneNumberId, recipientPhone, t
 }
 
 /**
+ * Messenger mesaj gönder (Meta Graph API)
+ * @param {string} accessToken - Page Access Token
+ * @param {string} recipientId - Facebook User PSID
+ * @param {string} text - Mesaj içeriği
+ */
+async function sendMessengerMessage(accessToken, recipientId, text) {
+    const fetch = (await import('node-fetch')).default;
+    const url = `${GRAPH_API_BASE}/me/messages`;
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
+        body: JSON.stringify({
+            recipient: { id: recipientId },
+            message: { text }
+        })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+        throw new Error(`Meta Messenger API hatası: ${res.status} - ${JSON.stringify(data.error || data)}`);
+    }
+    return data;
+}
+
+/**
  * Meta Access Token doğrulama
  * @param {string} accessToken
  * @returns {{ valid: boolean, message: string, data?: object }}
@@ -95,6 +119,10 @@ async function sendOutboundMessage(db, { companyId, source, recipientId, recipie
                 await sendWhatsAppMessage(integration.api_key, integration.phone_number_id, recipientPhone || recipientId, text);
                 console.log(`📤 Meta WA mesaj gönderildi: "${text.substring(0, 50)}"`);
                 return { sent: true, provider: 'meta' };
+            } else if (source === 'messenger' && recipientId) {
+                await sendMessengerMessage(integration.api_key, recipientId, text);
+                console.log(`📤 Meta Messenger mesaj gönderildi: "${text.substring(0, 50)}"`);
+                return { sent: true, provider: 'meta' };
             }
             return { sent: false, reason: 'missing_recipient' };
         } catch (err) {
@@ -135,4 +163,4 @@ async function sendOutboundMessage(db, { companyId, source, recipientId, recipie
     return { sent: false, reason: 'unknown_provider' };
 }
 
-module.exports = { sendInstagramMessage, sendWhatsAppMessage, verifyToken, sendOutboundMessage };
+module.exports = { sendInstagramMessage, sendWhatsAppMessage, sendMessengerMessage, verifyToken, sendOutboundMessage };

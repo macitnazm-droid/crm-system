@@ -84,8 +84,8 @@ router.post('/', authMiddleware, adminOnly, (req, res) => {
         const { platform, api_key, api_secret, webhook_url, phone_number_id, page_id, verify_token, is_active, provider, dsn_url, unipile_account_id } = req.body;
         const companyId = req.user.company_id;
 
-        if (!platform || !['instagram', 'whatsapp'].includes(platform)) {
-            return res.status(400).json({ error: 'Geçerli bir platform seçin (instagram/whatsapp)' });
+        if (!platform || !['instagram', 'whatsapp', 'messenger'].includes(platform)) {
+            return res.status(400).json({ error: 'Geçerli bir platform seçin (instagram/whatsapp/messenger)' });
         }
 
         // Mevcut kayıt var mı kontrol et (platform + provider bazlı)

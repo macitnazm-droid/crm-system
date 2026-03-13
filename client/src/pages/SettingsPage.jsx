@@ -24,6 +24,7 @@ export default function SettingsPage() {
     const [igUnipileForm, setIgUnipileForm] = useState({ platform: 'instagram', provider: 'unipile', api_key: '', dsn_url: '', unipile_account_id: '', is_active: false });
     const [waMetaForm, setWaMetaForm] = useState({ platform: 'whatsapp', provider: 'meta', api_key: '', api_secret: '', phone_number_id: '', verify_token: '', is_active: false });
     const [waUnipileForm, setWaUnipileForm] = useState({ platform: 'whatsapp', provider: 'unipile', api_key: '', dsn_url: '', unipile_account_id: '', is_active: false });
+    const [msgMetaForm, setMsgMetaForm] = useState({ platform: 'messenger', provider: 'meta', api_key: '', api_secret: '', page_id: '', verify_token: '', is_active: false });
     const [igProvider, setIgProvider] = useState('meta');
     const [waProvider, setWaProvider] = useState('meta');
 
@@ -49,6 +50,9 @@ export default function SettingsPage() {
             if (igUni) setIgUnipileForm(prev => ({ ...prev, api_key: igUni.api_key || '', dsn_url: igUni.dsn_url || '', unipile_account_id: igUni.unipile_account_id || '', is_active: !!igUni.is_active }));
             if (waMeta) setWaMetaForm(prev => ({ ...prev, api_key: waMeta.api_key || '', api_secret: waMeta.api_secret || '', phone_number_id: waMeta.phone_number_id || '', verify_token: waMeta.verify_token || '', is_active: !!waMeta.is_active }));
             if (waUni) setWaUnipileForm(prev => ({ ...prev, api_key: waUni.api_key || '', dsn_url: waUni.dsn_url || '', unipile_account_id: waUni.unipile_account_id || '', is_active: !!waUni.is_active }));
+
+            const msgMeta = ints.find(i => i.platform === 'messenger' && i.provider === 'meta');
+            if (msgMeta) setMsgMetaForm(prev => ({ ...prev, api_key: msgMeta.api_key || '', api_secret: msgMeta.api_secret || '', page_id: msgMeta.page_id || '', verify_token: msgMeta.verify_token || '', is_active: !!msgMeta.is_active }));
 
         } catch (err) { console.error(err); }
         finally { setLoading(false); }
@@ -461,10 +465,96 @@ export default function SettingsPage() {
                         </div>
                     </div>
 
+                    {/* Messenger */}
+                    <div className="glass-card" style={{ padding: 0, overflow: 'hidden' }}>
+                        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <div style={{ width: 36, height: 36, borderRadius: 'var(--radius-md)', background: 'linear-gradient(135deg, #00B2FF, #006AFF)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
+                                    <MessageCircle size={18} />
+                                </div>
+                                <div>
+                                    <h3 style={{ fontSize: 15, fontWeight: 600 }}>Facebook Messenger</h3>
+                                    <p style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Messenger mesajlarını alıp yanıtlayın</p>
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                {msgMetaForm.is_active ? (
+                                    <span className="badge" style={{ fontSize: 10, background: 'rgba(59,130,246,0.12)', color: '#3b82f6', border: '1px solid rgba(59,130,246,0.3)' }}>Aktif</span>
+                                ) : (
+                                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Pasif</span>
+                                )}
+                            </div>
+                        </div>
+                        <div style={{ padding: 20 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                                <span style={{ fontSize: 12, color: msgMetaForm.is_active ? 'var(--success)' : 'var(--text-muted)' }}>
+                                    {msgMetaForm.is_active ? 'Aktif' : 'Pasif'}
+                                </span>
+                                <div className={`toggle ${msgMetaForm.is_active ? 'active' : ''}`}
+                                    onClick={() => setMsgMetaForm(prev => ({ ...prev, is_active: !prev.is_active }))} />
+                            </div>
+
+                            <div style={{ padding: '10px 14px', marginBottom: 14, borderRadius: 'var(--radius-md)', background: 'rgba(0,106,255,0.06)', border: '1px solid rgba(0,106,255,0.2)', fontSize: 12, color: 'var(--text-secondary)' }}>
+                                Facebook sayfanıza gelen Messenger mesajlarını CRM'de yönetin. Instagram ile aynı Meta uygulamasını kullanabilirsiniz.
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
+                                <div>
+                                    <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                        <Key size={12} /> Access Token
+                                    </label>
+                                    <input className="input" type="password" placeholder="Page Access Token" value={msgMetaForm.api_key}
+                                        onChange={e => setMsgMetaForm(prev => ({ ...prev, api_key: e.target.value }))} />
+                                </div>
+                                <div>
+                                    <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                        <Shield size={12} /> App Secret
+                                    </label>
+                                    <input className="input" type="password" placeholder="App Secret" value={msgMetaForm.api_secret}
+                                        onChange={e => setMsgMetaForm(prev => ({ ...prev, api_secret: e.target.value }))} />
+                                </div>
+                                <div>
+                                    <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                        <Globe size={12} /> Page ID
+                                    </label>
+                                    <input className="input" placeholder="Facebook Page ID" value={msgMetaForm.page_id}
+                                        onChange={e => setMsgMetaForm(prev => ({ ...prev, page_id: e.target.value }))} />
+                                </div>
+                                <div>
+                                    <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                        <Shield size={12} /> Verify Token
+                                    </label>
+                                    <input className="input" placeholder="Webhook Verify Token" value={msgMetaForm.verify_token}
+                                        onChange={e => setMsgMetaForm(prev => ({ ...prev, verify_token: e.target.value }))} />
+                                </div>
+                            </div>
+                            <div style={{ marginBottom: 14 }}>
+                                <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    <Webhook size={12} /> Webhook URL (Meta Dashboard'a yapıştırın)
+                                </label>
+                                <input className="input" readOnly value={`${serverUrl}/api/webhooks/messenger`}
+                                    style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', cursor: 'text' }}
+                                    onClick={e => { e.target.select(); navigator.clipboard?.writeText(e.target.value); }} />
+                                <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                                    Bu URL'yi Meta Developer Dashboard → Messenger → Webhooks → Callback URL alanına yapıştırın
+                                </p>
+                            </div>
+
+                            <div style={{ display: 'flex', gap: 8 }}>
+                                <button className="btn btn-primary btn-sm" onClick={() => saveIntegration(msgMetaForm)} disabled={saving}>
+                                    {saving ? <Loader size={14} className="spinning" /> : <Save size={14} />} Kaydet
+                                </button>
+                                <button className="btn btn-secondary btn-sm" onClick={() => testConnection('messenger', 'meta')} disabled={saving}>
+                                    Bağlantıyı Test Et
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
                     {/* How-to Guide */}
                     <div className="glass-card" style={{ padding: 20 }}>
                         <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>📖 Nasıl Bağlanır?</h3>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 20 }}>
                             <div>
                                 <h4 style={{ fontSize: 13, fontWeight: 600, color: 'var(--instagram)', marginBottom: 8 }}>Instagram Kurulumu</h4>
                                 <ol style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.8, paddingLeft: 16 }}>
@@ -485,6 +575,18 @@ export default function SettingsPage() {
                                     <li>Telefon numarası ekleyin/doğrulayın</li>
                                     <li>Access Token ve Phone Number ID'yi kopyalayın</li>
                                     <li>Configuration → Webhook URL'ye yukarıdaki URL'yi yapıştırın</li>
+                                    <li>Verify Token'ı girin</li>
+                                    <li>"messages" webhook field'ını subscribe edin</li>
+                                </ol>
+                            </div>
+                            <div>
+                                <h4 style={{ fontSize: 13, fontWeight: 600, color: '#006AFF', marginBottom: 8 }}>Messenger Kurulumu</h4>
+                                <ol style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.8, paddingLeft: 16 }}>
+                                    <li><a href="https://developers.facebook.com" target="_blank" rel="noopener" style={{ color: 'var(--accent-primary-hover)' }}>Meta Developer Dashboard</a>'a gidin</li>
+                                    <li>Messenger ürününü ekleyin</li>
+                                    <li>Facebook sayfanızı bağlayın</li>
+                                    <li>Page Access Token oluşturun</li>
+                                    <li>Webhooks → Callback URL'ye yukarıdaki URL'yi yapıştırın</li>
                                     <li>Verify Token'ı girin</li>
                                     <li>"messages" webhook field'ını subscribe edin</li>
                                 </ol>

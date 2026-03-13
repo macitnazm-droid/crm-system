@@ -33,7 +33,7 @@ function initDB() {
     } catch (err) { }
   });
 
-  // Migration: customers tablosuna unipile_chat_id, profile_pic, instagram_username ekle
+  // Migration: customers tablosuna unipile_chat_id, profile_pic, instagram_username, messenger_id ekle
   try {
     const custInfo = db.prepare(`PRAGMA table_info(customers)`).all();
     if (custInfo.length > 0 && !custInfo.some(c => c.name === 'unipile_chat_id')) {
@@ -45,7 +45,127 @@ function initDB() {
     if (custInfo.length > 0 && !custInfo.some(c => c.name === 'instagram_username')) {
       db.exec(`ALTER TABLE customers ADD COLUMN instagram_username TEXT DEFAULT ''`);
     }
+    if (custInfo.length > 0 && !custInfo.some(c => c.name === 'messenger_id')) {
+      db.exec(`ALTER TABLE customers ADD COLUMN messenger_id TEXT DEFAULT ''`);
+    }
   } catch (err) { }
+
+  // Migration: Messenger platform desteği — CHECK constraint'leri güncelle
+  try {
+    const custTableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='customers'").get();
+    if (custTableSql && !custTableSql.sql.includes('messenger')) {
+      console.log('🔄 Customers tablosu güncelleniyor (messenger desteği)...');
+      db.pragma('foreign_keys = OFF');
+      db.transaction(() => {
+        const cols = db.prepare('PRAGMA table_info(customers)').all();
+        const colNames = cols.map(c => c.name).join(', ');
+        db.exec(`ALTER TABLE customers RENAME TO customers_old`);
+        db.exec(`
+          CREATE TABLE customers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_id INTEGER REFERENCES companies(id),
+            phone TEXT,
+            instagram_id TEXT,
+            whatsapp_id TEXT,
+            messenger_id TEXT DEFAULT '',
+            name TEXT NOT NULL,
+            email TEXT,
+            category TEXT DEFAULT 'cold' CHECK(category IN ('hot', 'warm', 'cold', 'unqualified')),
+            lead_score INTEGER DEFAULT 0,
+            source TEXT DEFAULT 'instagram' CHECK(source IN ('instagram', 'whatsapp', 'messenger', 'api', 'manual')),
+            last_message_at DATETIME,
+            unipile_chat_id TEXT DEFAULT '',
+            profile_pic TEXT DEFAULT '',
+            instagram_username TEXT DEFAULT '',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+        // Eski kolonları yeniye kopyala (messenger_id olmayabilir, default '' olur)
+        const oldCols = cols.map(c => c.name);
+        const safeCols = oldCols.filter(c => c !== 'messenger_id').join(', ');
+        db.exec(`INSERT INTO customers (${safeCols}) SELECT ${safeCols} FROM customers_old`);
+        db.exec(`DROP TABLE customers_old`);
+      })();
+      db.pragma('foreign_keys = ON');
+    }
+  } catch (err) {
+    console.error('Customers messenger migration error:', err.message);
+    db.pragma('foreign_keys = ON');
+  }
+
+  // Migration: Messages tablosu — source CHECK'e messenger ekle
+  try {
+    const msgTableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='messages'").get();
+    if (msgTableSql && !msgTableSql.sql.includes('messenger')) {
+      console.log('🔄 Messages tablosu güncelleniyor (messenger desteği)...');
+      db.pragma('foreign_keys = OFF');
+      db.transaction(() => {
+        db.exec(`ALTER TABLE messages RENAME TO messages_old`);
+        db.exec(`
+          CREATE TABLE messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_id INTEGER REFERENCES companies(id),
+            conversation_id INTEGER NOT NULL REFERENCES conversations(id),
+            customer_id INTEGER NOT NULL REFERENCES customers(id),
+            user_id INTEGER REFERENCES users(id),
+            content TEXT NOT NULL,
+            source TEXT DEFAULT 'instagram' CHECK(source IN ('instagram', 'whatsapp', 'messenger', 'api', 'manual')),
+            direction TEXT NOT NULL CHECK(direction IN ('inbound', 'outbound')),
+            is_ai_generated INTEGER DEFAULT 0,
+            ai_model TEXT,
+            is_manual_override INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+        db.exec(`INSERT INTO messages SELECT * FROM messages_old`);
+        db.exec(`DROP TABLE messages_old`);
+      })();
+      db.pragma('foreign_keys = ON');
+    }
+  } catch (err) {
+    console.error('Messages messenger migration error:', err.message);
+    db.pragma('foreign_keys = ON');
+  }
+
+  // Migration: integration_settings tablosu — platform CHECK'e messenger ekle
+  try {
+    const intTableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='integration_settings'").get();
+    if (intTableSql && !intTableSql.sql.includes('messenger')) {
+      console.log('🔄 Integration_settings tablosu güncelleniyor (messenger desteği)...');
+      db.pragma('foreign_keys = OFF');
+      db.transaction(() => {
+        const cols = db.prepare('PRAGMA table_info(integration_settings)').all();
+        const colNames = cols.map(c => c.name).join(', ');
+        db.exec(`ALTER TABLE integration_settings RENAME TO integration_settings_old`);
+        db.exec(`
+          CREATE TABLE integration_settings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_id INTEGER REFERENCES companies(id),
+            platform TEXT NOT NULL CHECK(platform IN ('instagram', 'whatsapp', 'messenger')),
+            api_key TEXT DEFAULT '',
+            api_secret TEXT DEFAULT '',
+            webhook_url TEXT DEFAULT '',
+            phone_number_id TEXT DEFAULT '',
+            page_id TEXT DEFAULT '',
+            verify_token TEXT DEFAULT '',
+            is_active INTEGER DEFAULT 0,
+            provider TEXT DEFAULT 'meta',
+            dsn_url TEXT DEFAULT '',
+            unipile_account_id TEXT DEFAULT '',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+        db.exec(`INSERT INTO integration_settings (${colNames}) SELECT ${colNames} FROM integration_settings_old`);
+        db.exec(`DROP TABLE integration_settings_old`);
+      })();
+      db.pragma('foreign_keys = ON');
+    }
+  } catch (err) {
+    console.error('Integration_settings messenger migration error:', err.message);
+    db.pragma('foreign_keys = ON');
+  }
 
   // Migration: integration_settings tablosuna provider, dsn_url, unipile_account_id ekle
   try {
@@ -142,7 +262,8 @@ function initDB() {
       email TEXT,
       category TEXT DEFAULT 'cold' CHECK(category IN ('hot', 'warm', 'cold', 'unqualified')),
       lead_score INTEGER DEFAULT 0,
-      source TEXT DEFAULT 'instagram' CHECK(source IN ('instagram', 'whatsapp', 'api', 'manual')),
+      messenger_id TEXT,
+      source TEXT DEFAULT 'instagram' CHECK(source IN ('instagram', 'whatsapp', 'messenger', 'api', 'manual')),
       last_message_at DATETIME,
       unipile_chat_id TEXT DEFAULT '',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -170,7 +291,7 @@ function initDB() {
       customer_id INTEGER NOT NULL REFERENCES customers(id),
       user_id INTEGER REFERENCES users(id),
       content TEXT NOT NULL,
-      source TEXT DEFAULT 'instagram' CHECK(source IN ('instagram', 'whatsapp', 'api', 'manual')),
+      source TEXT DEFAULT 'instagram' CHECK(source IN ('instagram', 'whatsapp', 'messenger', 'api', 'manual')),
       direction TEXT NOT NULL CHECK(direction IN ('inbound', 'outbound')),
       is_ai_generated INTEGER DEFAULT 0,
       ai_model TEXT,
@@ -193,7 +314,7 @@ function initDB() {
     CREATE TABLE IF NOT EXISTS integration_settings (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       company_id INTEGER REFERENCES companies(id),
-      platform TEXT NOT NULL CHECK(platform IN ('instagram', 'whatsapp')),
+      platform TEXT NOT NULL CHECK(platform IN ('instagram', 'whatsapp', 'messenger')),
       api_key TEXT DEFAULT '',
       api_secret TEXT DEFAULT '',
       webhook_url TEXT DEFAULT '',

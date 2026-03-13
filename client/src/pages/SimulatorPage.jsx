@@ -112,6 +112,11 @@ export default function SimulatorPage() {
                                     onClick={() => setForm(prev => ({ ...prev, source: 'whatsapp' }))}>
                                     <MessageCircle size={14} /> WhatsApp
                                 </button>
+                                <button type="button" className={`btn btn-sm ${form.source === 'messenger' ? '' : 'btn-ghost'}`}
+                                    style={form.source === 'messenger' ? { background: 'rgba(0,106,255,0.1)', color: '#006AFF', border: '1px solid rgba(0,106,255,0.3)' } : {}}
+                                    onClick={() => setForm(prev => ({ ...prev, source: 'messenger' }))}>
+                                    <MessageCircle size={14} /> Messenger
+                                </button>
                             </div>
                         </div>
 

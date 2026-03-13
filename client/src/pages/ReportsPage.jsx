@@ -53,9 +53,9 @@ export default function ReportsPage() {
     ].filter(d => d.value > 0);
 
     const sourceData = sources.map(s => ({
-        name: s.source === 'instagram' ? 'Instagram' : s.source === 'whatsapp' ? 'WhatsApp' : s.source,
+        name: s.source === 'instagram' ? 'Instagram' : s.source === 'whatsapp' ? 'WhatsApp' : s.source === 'messenger' ? 'Messenger' : s.source,
         value: s.count,
-        fill: s.source === 'instagram' ? '#e1306c' : s.source === 'whatsapp' ? '#25d366' : '#6366f1'
+        fill: s.source === 'instagram' ? '#e1306c' : s.source === 'whatsapp' ? '#25d366' : s.source === 'messenger' ? '#006AFF' : '#6366f1'
     }));
 
     const tooltipStyle = {
