@@ -107,6 +107,12 @@ router.post('/instagram', async (req, res) => {
                     const senderId = event.sender?.id;
                     const messageText = event.message?.text;
 
+                    // Kendi sayfamızdan gelen mesajları atla (echo flag olmasa bile)
+                    if (senderId === pageId) {
+                        console.log(`⏭ Kendi sayfamızdan mesaj (sender=${senderId} = page=${pageId}), atlanıyor`);
+                        continue;
+                    }
+
                     if (senderId && messageText) {
                         // Graph API'den kullanıcı profil bilgisi çek
                         let customerName = null;
@@ -124,10 +130,15 @@ router.post('/instagram', async (req, res) => {
                                     username = profile.username || null;
                                     profilePic = profile.profile_pic || null;
                                     console.log(`👤 IG Profil: ${customerName} (@${username})`);
+                                } else {
+                                    const errData = await profileRes.json().catch(() => ({}));
+                                    console.warn(`👤 IG Profil çekilemedi (${profileRes.status}): ${errData?.error?.message || 'bilinmeyen hata'} [page=${pageId}, sender=${senderId}]`);
                                 }
                             } catch (profileErr) {
                                 console.warn('IG profil çekme hatası:', profileErr.message);
                             }
+                        } else {
+                            console.warn(`👤 IG Profil: api_key yok [integration=${activeIntegration?.id}, company=${companyId}]`);
                         }
 
                         console.log(`📨 Meta IG: ${customerName || senderId} → "${messageText.substring(0, 60)}"`);
