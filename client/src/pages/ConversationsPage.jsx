@@ -310,8 +310,21 @@ export default function ConversationsPage() {
                                                 alt="Görsel"
                                                 style={{ maxWidth: '100%', maxHeight: 300, borderRadius: 8, marginBottom: 4, cursor: 'pointer' }}
                                                 onClick={() => window.open(msg.media_url, '_blank')}
-                                                onError={(e) => { e.target.style.display = 'none'; }}
+                                                onError={(e) => {
+                                                    e.target.style.display = 'none';
+                                                    const fallback = e.target.nextElementSibling;
+                                                    if (fallback && fallback.classList.contains('media-fallback')) fallback.style.display = 'flex';
+                                                }}
                                             />
+                                        )}
+                                        {msg.media_url && ['image', 'sticker'].includes(msg.media_type) && (
+                                            <div className="media-fallback" style={{
+                                                display: 'none', alignItems: 'center', gap: 6,
+                                                padding: '8px 12px', background: 'rgba(139,92,246,0.1)',
+                                                borderRadius: 8, marginBottom: 4, fontSize: 13, color: '#8b5cf6'
+                                            }}>
+                                                📷 Görsel (süresi dolmuş)
+                                            </div>
                                         )}
                                         {msg.media_url && msg.media_type === 'video' && (
                                             <video src={msg.media_url} controls style={{ maxWidth: '100%', maxHeight: 300, borderRadius: 8, marginBottom: 4 }} />

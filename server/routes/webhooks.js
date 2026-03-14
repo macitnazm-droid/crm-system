@@ -1,8 +1,50 @@
 const express = require('express');
+const fs = require('fs');
+const pathModule = require('path');
 const { aiService } = require('../services/aiService');
 const { isDuplicate, markAsSent, wasSentByUs } = require('../services/messageDedup');
 const { sendOutboundMessage } = require('../services/metaService');
 const { sendAppointmentNotification } = require('../services/appointmentNotifyService');
+
+/**
+ * Harici medya URL'sini indir ve sunucuya kaydet
+ * Instagram/Facebook CDN linkleri kısa sürede expire olur
+ */
+async function downloadAndSaveMedia(externalUrl, mediaType) {
+    if (!externalUrl) return null;
+    // Zaten lokal dosyaysa indirmeye gerek yok
+    if (externalUrl.startsWith('/uploads/')) return externalUrl;
+    try {
+        const fetch = (await import('node-fetch')).default;
+        const res = await fetch(externalUrl, { timeout: 15000 });
+        if (!res.ok) {
+            console.warn(`⚠️ Medya indirilemedi (${res.status}): ${externalUrl.substring(0, 100)}`);
+            return externalUrl; // Fallback: orijinal URL'yi döndür
+        }
+        const contentType = res.headers.get('content-type') || '';
+        let ext = '.jpg';
+        if (contentType.includes('png')) ext = '.png';
+        else if (contentType.includes('gif')) ext = '.gif';
+        else if (contentType.includes('webp')) ext = '.webp';
+        else if (contentType.includes('mp4') || contentType.includes('video')) ext = '.mp4';
+        else if (contentType.includes('audio') || contentType.includes('ogg')) ext = '.ogg';
+        else if (mediaType === 'video') ext = '.mp4';
+        else if (mediaType === 'audio') ext = '.ogg';
+
+        const uploadsDir = pathModule.join(__dirname, '..', 'uploads');
+        if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+
+        const filename = `media_${Date.now()}_${Math.random().toString(36).substring(2, 8)}${ext}`;
+        const filepath = pathModule.join(uploadsDir, filename);
+        const buffer = await res.buffer();
+        fs.writeFileSync(filepath, buffer);
+        console.log(`💾 Medya kaydedildi: ${filename} (${(buffer.length / 1024).toFixed(1)} KB)`);
+        return `/uploads/${filename}`;
+    } catch (err) {
+        console.error('⚠️ Medya indirme hatası:', err.message);
+        return externalUrl; // Fallback: orijinal URL
+    }
+}
 
 // Regex tabanlı randevu tespiti (AI'a bağımlı değil)
 function detectAppointment(messages, customerName) {
@@ -487,8 +529,11 @@ router.post('/simulate', async (req, res) => {
 // Gelen mesajı işle
 async function processIncomingMessage(db, io, data) {
 
-    const { company_id, platform_id, content, source, customer_name, phone, instagram_id, unipile_chat_id, profile_pic, username, is_group, media_url, media_type } = data;
+    const { company_id, platform_id, content, source, customer_name, phone, instagram_id, unipile_chat_id, profile_pic, username, is_group, media_url: rawMediaUrl, media_type } = data;
     const now = new Date().toISOString();
+
+    // Harici medya URL'sini indir ve lokal olarak kaydet (Instagram CDN linkleri expire olur)
+    const media_url = rawMediaUrl ? await downloadAndSaveMedia(rawMediaUrl, media_type) : null;
 
     // Duplikasyon kontrolü: Aynı müşteriden, aynı içerikle, son 60 saniye içinde mesaj var mı?
     const sixtySecsAgo = new Date(Date.now() - 60 * 1000).toISOString();
@@ -1130,8 +1175,9 @@ router.post('/unipile/:companyId', async (req, res) => {
 
 // Dışarıdan gönderilen mesajları (telefondan, dış servislerden) panele kaydet
 async function processOutboundMessage(db, io, data) {
-    const { company_id, platform_id, content, source, customer_name, unipile_chat_id, is_group, media_url, media_type } = data;
+    const { company_id, platform_id, content, source, customer_name, unipile_chat_id, is_group, media_url: rawOutMediaUrl, media_type } = data;
     const now = new Date().toISOString();
+    const media_url = rawOutMediaUrl ? await downloadAndSaveMedia(rawOutMediaUrl, media_type) : null;
 
     if (!platform_id || (!content && !media_url)) return null;
 

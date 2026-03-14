@@ -10,10 +10,10 @@ const GRAPH_API_BASE = 'https://graph.facebook.com/v21.0';
  */
 async function sendInstagramMessage(accessToken, recipientId, text) {
     const fetch = (await import('node-fetch')).default;
-    const url = `${GRAPH_API_BASE}/me/messages`;
+    const url = `${GRAPH_API_BASE}/me/messages?access_token=${accessToken}`;
     const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             recipient: { id: recipientId },
             message: { text }
@@ -35,10 +35,10 @@ async function sendInstagramMessage(accessToken, recipientId, text) {
  */
 async function sendWhatsAppMessage(accessToken, phoneNumberId, recipientPhone, text) {
     const fetch = (await import('node-fetch')).default;
-    const url = `${GRAPH_API_BASE}/${phoneNumberId}/messages`;
+    const url = `${GRAPH_API_BASE}/${phoneNumberId}/messages?access_token=${accessToken}`;
     const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             messaging_product: 'whatsapp',
             to: recipientPhone,
@@ -61,10 +61,10 @@ async function sendWhatsAppMessage(accessToken, phoneNumberId, recipientPhone, t
  */
 async function sendMessengerMessage(accessToken, recipientId, text) {
     const fetch = (await import('node-fetch')).default;
-    const url = `${GRAPH_API_BASE}/me/messages`;
+    const url = `${GRAPH_API_BASE}/me/messages?access_token=${accessToken}`;
     const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             recipient: { id: recipientId },
             message: { text }
@@ -104,10 +104,10 @@ async function verifyToken(accessToken) {
  */
 async function sendImageMessage(accessToken, recipientId, imageUrl, platform = 'instagram') {
     const fetch = (await import('node-fetch')).default;
-    const url = `${GRAPH_API_BASE}/me/messages`;
+    const url = `${GRAPH_API_BASE}/me/messages?access_token=${accessToken}`;
     const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             recipient: { id: recipientId },
             message: {
@@ -128,10 +128,10 @@ async function sendImageMessage(accessToken, recipientId, imageUrl, platform = '
  */
 async function sendWhatsAppImage(accessToken, phoneNumberId, recipientPhone, imageUrl, caption) {
     const fetch = (await import('node-fetch')).default;
-    const url = `${GRAPH_API_BASE}/${phoneNumberId}/messages`;
+    const url = `${GRAPH_API_BASE}/${phoneNumberId}/messages?access_token=${accessToken}`;
     const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             messaging_product: 'whatsapp',
             to: recipientPhone,
