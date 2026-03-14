@@ -920,6 +920,15 @@ router.post('/unipile/:companyId', async (req, res) => {
 
         console.log(`🔍 Parsed: senderId=${senderId}, text="${messageText?.substring(0, 50)}", chatId=${chatId}, provider=${provider}`);
 
+        // Grup mesajlarını atla
+        const isGroup = body.is_group === true || body.chat_type === 'group'
+            || (body.attendees && body.attendees.length > 2)
+            || body.group_name;
+        if (isGroup) {
+            console.log('⏭ Grup mesajı, atlanıyor');
+            return res.status(200).json({ status: 'ok', note: 'group message' });
+        }
+
         if (!senderId || !messageText) {
             console.warn(`⚠️ Eksik alan: senderId=${senderId}, messageText=${messageText}`);
             return res.status(200).json({ status: 'ok', note: 'no message content' });

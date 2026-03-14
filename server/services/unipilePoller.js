@@ -61,6 +61,12 @@ async function pollIntegration(db, io, integration) {
     const chats = chatsData.items || chatsData.chats || chatsData.object === 'ChatsPage' && chatsData.items || [];
 
     for (const chat of chats) {
+        // Grup mesajlarını atla (sadece 1-1 konuşmalar işlensin)
+        const isGroup = chat.is_group === true || chat.type === 'group' || chat.group_name
+            || (chat.attendees && chat.attendees.length > 2)
+            || (chat.name && chat.name.includes(','));
+        if (isGroup) continue;
+
         // Konuşma since'den eski ise atla
         const chatUpdated = chat.updated_at || chat.last_message_at || chat.timestamp;
         if (chatUpdated && chatUpdated < since) continue;
