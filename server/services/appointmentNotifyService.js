@@ -86,9 +86,9 @@ async function sendAppointmentNotification(db, companyId, appointment, type = 'c
                 text: message
             });
 
-            // WhatsApp entegrasyonu bulunamadıysa, Unipile varsa onunla dene
-            if (!result.sent && result.reason === 'no_integration') {
-                console.log(`📱 [NOTIFY] WhatsApp platform entegrasyonu yok, Unipile ile deneniyor...`);
+            // İlk deneme başarısızsa, Unipile ile direkt dene (chat_id veya telefon ile)
+            if (!result.sent) {
+                console.log(`📱 [NOTIFY] İlk deneme başarısız (${result.reason}), Unipile direkt deneniyor...`);
                 const unipileInt = db.prepare(
                     "SELECT * FROM integration_settings WHERE company_id = ? AND provider = 'unipile' AND is_active = 1 LIMIT 1"
                 ).get(companyId);
