@@ -74,8 +74,8 @@ router.post('/login', (req, res) => {
             return res.status(401).json({ error: 'Geçersiz email veya şifre' });
         }
 
-        // Şirket aktif mi kontrol et
-        if (user.company_id) {
+        // Şirket aktif mi kontrol et (superadmin muaf)
+        if (user.company_id && user.role !== 'superadmin') {
             const company = db.prepare('SELECT is_active FROM companies WHERE id = ?').get(user.company_id);
             if (company && !company.is_active) {
                 return res.status(403).json({ error: 'Şirket hesabı dondurulmuş. Lütfen yönetici ile iletişime geçin.' });
