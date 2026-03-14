@@ -581,8 +581,10 @@ async function processIncomingMessage(db, io, data) {
                 apptContext += '\n- Müşteri "teşekkür", "tamam", "görüşürüz" gibi kapanış mesajları gönderiyorsa ASLA randevu tag\'ı ekleme.';
                 apptContext += '\n- Zaten oluşturulmuş bir randevuyu tekrar oluşturma. Aynı kişi aynı saate tekrar isterse "zaten randevunuz var" de.';
                 apptContext += '\n- Müşteri adını sohbette kendisi belirttiyse O İSMİ KULLAN, WhatsApp profil adını değil. Örneğin müşteri "Şamil Tayyar için randevu" diyorsa isim "Şamil Tayyar" olmalı.';
-                apptContext += '\n- Tag formatı: [RANDEVU: tarih=YYYY-MM-DD, saat=HH:MM, hizmet=Hizmet Adı, personel=Personel Adı, isim=Müşteri Adı]';
+                apptContext += '\n- TELEFON NUMARASI: Randevu oluşturmadan önce müşterinin telefon numarasını mutlaka sor! "WhatsApp üzerinden randevu onay mesajı göndermemiz için telefon numaranızı paylaşır mısınız?" de. Müşteri numarasını verene kadar randevu tag\'ı EKLEME. Eğer müşteri zaten WhatsApp\'tan yazıyorsa telefon zaten var, sormana gerek yok.';
+                apptContext += '\n- Tag formatı: [RANDEVU: tarih=YYYY-MM-DD, saat=HH:MM, hizmet=Hizmet Adı, personel=Personel Adı, isim=Müşteri Adı, telefon=Telefon Numarası]';
                 apptContext += '\n- isim alanı: Müşterinin sohbette belirttiği ismi yaz. Belirtmemişse boş bırak.';
+                apptContext += '\n- telefon alanı: Müşterinin verdiği telefon numarası. WhatsApp\'tan geliyorsa veya telefon zaten biliniyorsa onu yaz. Bilinmiyorsa boş bırak.';
                 apptContext += '\n--- RANDEVU SİSTEMİ BİLGİLERİ SONU ---';
 
                 systemPrompt += apptContext;
@@ -595,9 +597,17 @@ async function processIncomingMessage(db, io, data) {
 
         // AI yanıtında randevu talimatı varsa otomatik kaydet
         try {
-            const apptMatch = aiResponse.content.match(/\[RANDEVU:\s*tarih=(\d{4}-\d{2}-\d{2}),\s*saat=(\d{2}:\d{2}),\s*hizmet=([^,\]]+)(?:,\s*personel=([^,\]]+))?(?:,\s*isim=([^\]]+))?\]/);
+            const apptMatch = aiResponse.content.match(/\[RANDEVU:\s*tarih=(\d{4}-\d{2}-\d{2}),\s*saat=(\d{2}:\d{2}),\s*hizmet=([^,\]]+)(?:,\s*personel=([^,\]]+))?(?:,\s*isim=([^,\]]+))?(?:,\s*telefon=([^\]]+))?\]/);
             if (apptMatch) {
-                const [, apptDate, apptTime, serviceName, staffName, customerNameFromAI] = apptMatch;
+                const [, apptDate, apptTime, serviceName, staffName, customerNameFromAI, phoneFromAI] = apptMatch;
+
+                // AI'dan gelen telefon numarasını müşteriye kaydet
+                const apptPhone = phoneFromAI?.trim() || customer.phone || phone || '';
+                if (apptPhone && !customer.phone) {
+                    db.prepare('UPDATE customers SET phone = ?, updated_at = ? WHERE id = ?').run(apptPhone, new Date().toISOString(), customer.id);
+                    customer.phone = apptPhone;
+                    console.log(`📞 Müşteri telefonu güncellendi: ${customer.name} → ${apptPhone}`);
+                }
 
                 // Hizmeti bul
                 const svc = db.prepare('SELECT id, duration FROM services WHERE company_id = ? AND name LIKE ? AND is_active = 1').get(company_id, `%${serviceName.trim()}%`);
@@ -659,22 +669,22 @@ async function processIncomingMessage(db, io, data) {
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', 'ai', ?)
                     `).run(
                         company_id, customer.id, conversation.id,
-                        apptCustomerName, customer.phone || phone || '',
+                        apptCustomerName, apptPhone,
                         stf?.id || null, svc?.id || null,
                         apptDate, apptTime, endTime,
                         serviceName.trim(), `${apptDate} ${apptTime}`
                     );
                     db.pragma('foreign_keys = ON');
 
-                    console.log(`📅 AI randevu oluşturdu: ${apptCustomerName} → ${apptDate} ${apptTime} (${serviceName.trim()})`);
+                    console.log(`📅 AI randevu oluşturdu: ${apptCustomerName} → ${apptDate} ${apptTime} (${serviceName.trim()}) phone=${apptPhone}`);
 
                 // Randevu onay bildirimi gönder (WhatsApp/SMS)
-                console.log(`📢 [WEBHOOK] Randevu bildirimi tetikleniyor: ${apptCustomerName} → ${apptDate} ${apptTime}`);
+                console.log(`📢 [WEBHOOK] Randevu bildirimi tetikleniyor: ${apptCustomerName} → ${apptDate} ${apptTime}, phone=${apptPhone}`);
                 sendAppointmentNotification(db, company_id, {
                     customer_name: apptCustomerName,
                     customer_id: customer.id,
                     conversation_id: conversation.id,
-                    phone: customer.phone || phone || '',
+                    phone: apptPhone,
                     appointment_date: apptDate,
                     start_time: apptTime,
                     end_time: endTime,
