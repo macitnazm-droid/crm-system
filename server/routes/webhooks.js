@@ -623,10 +623,14 @@ async function processIncomingMessage(db, io, data) {
                 // Çakışma kontrolü — süre bazlı overlap (yeni randevu aralığı mevcut randevuyla kesişiyor mu?)
                 // Overlap koşulu: new_start < existing_end AND new_end > existing_start
                 const conflictQuery = stf?.id
-                    ? db.prepare(`SELECT id, start_time, end_time, customer_name FROM appointments WHERE company_id = ? AND appointment_date = ? AND status NOT IN ('cancelled') AND staff_id = ? AND start_time < ? AND end_time > ?`).get(company_id, apptDate, stf.id, endTime, apptTime)
-                    : db.prepare(`SELECT id, start_time, end_time, customer_name FROM appointments WHERE company_id = ? AND appointment_date = ? AND status NOT IN ('cancelled') AND start_time < ? AND end_time > ?`).get(company_id, apptDate, endTime, apptTime);
+                    ? db.prepare(`SELECT id, start_time, end_time, customer_name, customer_id FROM appointments WHERE company_id = ? AND appointment_date = ? AND status NOT IN ('cancelled') AND staff_id = ? AND start_time < ? AND end_time > ?`).get(company_id, apptDate, stf.id, endTime, apptTime)
+                    : db.prepare(`SELECT id, start_time, end_time, customer_name, customer_id FROM appointments WHERE company_id = ? AND appointment_date = ? AND status NOT IN ('cancelled') AND start_time < ? AND end_time > ?`).get(company_id, apptDate, endTime, apptTime);
 
-                if (conflictQuery) {
+                // Kendi randevusuyla çakışıyorsa → zaten var, tag'ı sil ve AI yanıtını koru
+                if (conflictQuery && conflictQuery.customer_id === customer.id) {
+                    console.log(`ℹ️ Aynı müşterinin mevcut randevusu, tag siliniyor: ${apptDate} ${apptTime}`);
+                    aiResponse.content = aiResponse.content.replace(/\s*\[RANDEVU:[^\]]+\]/, '').trim();
+                } else if (conflictQuery) {
                     console.log(`⚠️ AI randevu çakışması: ${apptDate} ${apptTime}-${endTime} çakışıyor (mevcut: ${conflictQuery.start_time}-${conflictQuery.end_time})`);
 
                     // O günün müsait saatlerini hesapla

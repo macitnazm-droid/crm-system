@@ -129,21 +129,42 @@ async function sendAppointmentNotification(db, companyId, appointment, type = 'c
                             result = { sent: false, reason: `unipile_${sendRes.status}: ${errBody}` };
                         }
                     } else {
-                        // Chat ID yok — Unipile ile yeni mesaj göndermeyi dene
-                        const sendRes = await fetch(`${dsn}/api/v1/messages`, {
-                            method: 'POST',
-                            headers: { 'X-API-KEY': unipileInt.api_key, 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                account_id: unipileInt.unipile_account_id,
-                                text: message,
-                                attendees_ids: [formattedPhone + '@s.whatsapp.net']
-                            })
-                        });
-                        if (sendRes.ok) {
-                            result = { sent: true, provider: 'unipile-new' };
-                        } else {
-                            const errBody = await sendRes.text();
-                            result = { sent: false, reason: `unipile_new_${sendRes.status}: ${errBody}` };
+                        // Chat ID yok — önce WhatsApp Web (Baileys) ile dene
+                        try {
+                            const { sendMessage, getStatus } = require('./whatsappWebService');
+                            const waStatus = getStatus(companyId);
+                            if (waStatus.status === 'connected') {
+                                const waResult = await sendMessage(companyId, formattedPhone, message);
+                                if (waResult.sent) {
+                                    result = { sent: true, provider: 'whatsapp-web' };
+                                } else {
+                                    result = { sent: false, reason: `wa-web: ${waResult.reason}` };
+                                }
+                            } else {
+                                result = { sent: false, reason: 'wa-web not connected' };
+                            }
+                        } catch (waErr) {
+                            console.log(`📱 [NOTIFY] WhatsApp Web denemesi başarısız: ${waErr.message}`);
+                            result = { sent: false, reason: `wa-web: ${waErr.message}` };
+                        }
+
+                        // WhatsApp Web de başarısızsa, Unipile ile yeni chat oluştur
+                        if (!result.sent) {
+                            const sendRes = await fetch(`${dsn}/api/v1/chats`, {
+                                method: 'POST',
+                                headers: { 'X-API-KEY': unipileInt.api_key, 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    account_id: unipileInt.unipile_account_id,
+                                    text: message,
+                                    attendees_ids: [formattedPhone + '@s.whatsapp.net']
+                                })
+                            });
+                            if (sendRes.ok) {
+                                result = { sent: true, provider: 'unipile-new-chat' };
+                            } else {
+                                const errBody = await sendRes.text();
+                                result = { sent: false, reason: `unipile_chat_${sendRes.status}: ${errBody}` };
+                            }
                         }
                     }
                 }
