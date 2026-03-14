@@ -273,7 +273,27 @@ export default function ConversationsPage() {
                                                 {msg.is_ai_generated ? <><Bot size={10} /> AI ({msg.ai_model})</> : <><User size={10} /> {msg.sender_name || user?.name}</>}
                                             </div>
                                         )}
-                                        <p style={{ fontSize: 14, lineHeight: 1.5, wordBreak: 'break-word' }}>{msg.content}</p>
+                                        {msg.media_url && ['image', 'sticker'].includes(msg.media_type) && (
+                                            <img
+                                                src={msg.media_url}
+                                                alt="Görsel"
+                                                style={{ maxWidth: '100%', maxHeight: 300, borderRadius: 8, marginBottom: 4, cursor: 'pointer' }}
+                                                onClick={() => window.open(msg.media_url, '_blank')}
+                                                onError={(e) => { e.target.style.display = 'none'; }}
+                                            />
+                                        )}
+                                        {msg.media_url && msg.media_type === 'video' && (
+                                            <video src={msg.media_url} controls style={{ maxWidth: '100%', maxHeight: 300, borderRadius: 8, marginBottom: 4 }} />
+                                        )}
+                                        {msg.media_url && msg.media_type === 'audio' && (
+                                            <audio src={msg.media_url} controls style={{ maxWidth: '100%', marginBottom: 4 }} />
+                                        )}
+                                        {msg.media_url && !['image', 'video', 'audio', 'sticker'].includes(msg.media_type) && (
+                                            <a href={msg.media_url} target="_blank" rel="noopener noreferrer" style={{ color: '#8b5cf6', fontSize: 13 }}>📎 Dosyayı aç</a>
+                                        )}
+                                        {msg.content && !(msg.media_url && ['📷 Görsel', '🎥 Video', '🎵 Ses', '📎 Dosya'].includes(msg.content)) && (
+                                            <p style={{ fontSize: 14, lineHeight: 1.5, wordBreak: 'break-word' }}>{msg.content}</p>
+                                        )}
                                         <span style={{ fontSize: 10, opacity: 0.5, marginTop: 4, display: 'block', textAlign: msg.direction === 'inbound' ? 'left' : 'right' }}>
                                             {formatTime(msg.created_at)}
                                         </span>

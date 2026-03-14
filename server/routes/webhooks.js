@@ -117,7 +117,17 @@ router.post('/instagram', async (req, res) => {
                         continue;
                     }
 
-                    if (senderId && messageText) {
+                    // Görsel/medya kontrolü
+                    let igMediaUrl = null;
+                    let igMediaType = null;
+                    const attachments = event.message?.attachments;
+                    if (attachments && attachments.length > 0) {
+                        const att = attachments[0];
+                        igMediaType = att.type; // image, video, audio, file
+                        igMediaUrl = att.payload?.url;
+                    }
+
+                    if (senderId && (messageText || igMediaUrl)) {
                         // Graph API'den kullanıcı profil bilgisi çek
                         let customerName = null;
                         let profilePic = null;
@@ -145,15 +155,18 @@ router.post('/instagram', async (req, res) => {
                             console.warn(`👤 IG Profil: api_key yok [integration=${activeIntegration?.id}, company=${companyId}]`);
                         }
 
-                        console.log(`📨 Meta IG: ${customerName || senderId} → "${messageText.substring(0, 60)}"`);
+                        const displayContent = messageText || (igMediaType === 'image' ? '📷 Görsel' : igMediaType === 'video' ? '🎥 Video' : '📎 Dosya');
+                        console.log(`📨 Meta IG: ${customerName || senderId} → "${displayContent.substring(0, 60)}"${igMediaUrl ? ' [medya]' : ''}`);
                         await processIncomingMessage(db, io, {
                             company_id: companyId,
                             platform_id: senderId,
-                            content: messageText,
+                            content: displayContent,
                             source: 'instagram',
                             customer_name: customerName,
                             profile_pic: profilePic,
-                            username: username
+                            username: username,
+                            media_url: igMediaUrl,
+                            media_type: igMediaType,
                         });
                     }
                 }
@@ -239,7 +252,17 @@ router.post('/messenger', async (req, res) => {
                         continue;
                     }
 
-                    if (senderId && messageText) {
+                    // Görsel/medya kontrolü
+                    let msgMediaUrl = null;
+                    let msgMediaType = null;
+                    const msgAttachments = event.message?.attachments;
+                    if (msgAttachments && msgAttachments.length > 0) {
+                        const att = msgAttachments[0];
+                        msgMediaType = att.type;
+                        msgMediaUrl = att.payload?.url;
+                    }
+
+                    if (senderId && (messageText || msgMediaUrl)) {
                         // Graph API'den kullanıcı profil bilgisi çek
                         let customerName = null;
                         let profilePic = null;
@@ -260,15 +283,18 @@ router.post('/messenger', async (req, res) => {
                             }
                         }
 
-                        console.log(`📨 Messenger: ${customerName || senderId} → "${messageText.substring(0, 60)}" (company:${companyId})`);
+                        const msgDisplayContent = messageText || (msgMediaType === 'image' ? '📷 Görsel' : msgMediaType === 'video' ? '🎥 Video' : '📎 Dosya');
+                        console.log(`📨 Messenger: ${customerName || senderId} → "${msgDisplayContent.substring(0, 60)}" (company:${companyId})`);
                         try {
                             const result = await processIncomingMessage(db, io, {
                                 company_id: companyId,
                                 platform_id: senderId,
-                                content: messageText,
+                                content: msgDisplayContent,
                                 source: 'messenger',
                                 customer_name: customerName,
-                                profile_pic: profilePic
+                                profile_pic: profilePic,
+                                media_url: msgMediaUrl,
+                                media_type: msgMediaType,
                             });
                             console.log(`✅ Messenger mesaj kaydedildi: customer=${result?.customer?.id}, conv=${result?.conversation?.id}`);
                         } catch (msgErr) {
@@ -361,17 +387,43 @@ router.post('/whatsapp', async (req, res) => {
                     // Messages — gerçek gelen mesajlar
                     const messages = change.value?.messages || [];
                     for (const msg of messages) {
+                        const senderPhone = msg.from;
+                        const senderName = change.value?.contacts?.[0]?.profile?.name;
+                        let waContent = null;
+                        let waMediaUrl = null;
+                        let waMediaType = null;
+
                         if (msg.type === 'text' && msg.text?.body) {
-                            const senderPhone = msg.from; // Uluslararası format: 905551234567
-                            const senderName = change.value?.contacts?.[0]?.profile?.name;
-                            console.log(`📨 Meta WA: ${senderName || senderPhone} → "${msg.text.body.substring(0, 60)}"`);
+                            waContent = msg.text.body;
+                        } else if (['image', 'video', 'audio', 'document', 'sticker'].includes(msg.type)) {
+                            waMediaType = msg.type;
+                            waContent = msg[msg.type]?.caption || (msg.type === 'image' ? '📷 Görsel' : msg.type === 'video' ? '🎥 Video' : msg.type === 'audio' ? '🎵 Ses' : '📎 Dosya');
+                            const mediaId = msg[msg.type]?.id;
+                            if (mediaId && integration?.api_key) {
+                                try {
+                                    const fetch = (await import('node-fetch')).default;
+                                    const mediaRes = await fetch(`https://graph.facebook.com/v21.0/${mediaId}`, {
+                                        headers: { 'Authorization': `Bearer ${integration.api_key}` }
+                                    });
+                                    if (mediaRes.ok) {
+                                        const mediaData = await mediaRes.json();
+                                        waMediaUrl = mediaData.url;
+                                    }
+                                } catch (e) { }
+                            }
+                        }
+
+                        if (waContent) {
+                            console.log(`📨 Meta WA: ${senderName || senderPhone} → "${waContent.substring(0, 60)}"${waMediaUrl ? ' [medya]' : ''}`);
                             await processIncomingMessage(db, io, {
                                 company_id: companyId,
                                 platform_id: senderPhone,
-                                content: msg.text.body,
+                                content: waContent,
                                 source: 'whatsapp',
                                 customer_name: senderName,
-                                phone: senderPhone
+                                phone: senderPhone,
+                                media_url: waMediaUrl,
+                                media_type: waMediaType,
                             });
                         }
                     }
@@ -435,7 +487,7 @@ router.post('/simulate', async (req, res) => {
 // Gelen mesajı işle
 async function processIncomingMessage(db, io, data) {
 
-    const { company_id, platform_id, content, source, customer_name, phone, instagram_id, unipile_chat_id, profile_pic, username, is_group } = data;
+    const { company_id, platform_id, content, source, customer_name, phone, instagram_id, unipile_chat_id, profile_pic, username, is_group, media_url, media_type } = data;
     const now = new Date().toISOString();
 
     // Duplikasyon kontrolü: Aynı müşteriden, aynı içerikle, son 60 saniye içinde mesaj var mı?
@@ -543,9 +595,9 @@ async function processIncomingMessage(db, io, data) {
 
     // 3. Müşteri mesajını kaydet
     const msgResult = db.prepare(`
-    INSERT INTO messages (company_id, conversation_id, customer_id, content, source, direction, created_at)
-    VALUES (?, ?, ?, ?, ?, 'inbound', ?)
-  `).run(company_id, conversation.id, customer.id, content, source, now);
+    INSERT INTO messages (company_id, conversation_id, customer_id, content, source, direction, media_url, media_type, created_at)
+    VALUES (?, ?, ?, ?, ?, 'inbound', ?, ?, ?)
+  `).run(company_id, conversation.id, customer.id, content || '', source, media_url || null, media_type || null, now);
 
     const inboundMessage = db.prepare('SELECT * FROM messages WHERE id = ?').get(msgResult.lastInsertRowid);
 
@@ -905,6 +957,16 @@ router.post('/unipile/:companyId', async (req, res) => {
 
         // Unipile webhook formatları
         let senderId, senderName, messageText, provider, chatId;
+        let uniMediaUrl = null, uniMediaType = null;
+
+        // Unipile attachments
+        if (body.attachments && body.attachments.length > 0) {
+            const att = body.attachments[0];
+            uniMediaUrl = att.url || att.download_url || att.media_url;
+            uniMediaType = (att.type || att.mime_type || '').includes('image') ? 'image'
+                : (att.type || att.mime_type || '').includes('video') ? 'video'
+                : (att.type || att.mime_type || '').includes('audio') ? 'audio' : 'file';
+        }
 
         if (body.event && body.chat_id) {
             // Format 3 (Gerçek Unipile): { event, account_type, chat_id, attendees, message, sender }
@@ -959,10 +1021,14 @@ router.post('/unipile/:companyId', async (req, res) => {
             return res.status(200).json({ status: 'ok', note: 'no message content' });
         }
 
-        // "Unipile cannot display" mesajlarını atla
+        // "Unipile cannot display" mesajlarını: attachment varsa görseli kaydet, yoksa atla
         if (messageText.includes('Unipile cannot display') || messageText.includes('cannot display this type')) {
-            console.log('⏭ Görüntülenemeyen mesaj tipi, atlanıyor');
-            return res.status(200).json({ status: 'ok', note: 'unsupported message type' });
+            if (uniMediaUrl) {
+                messageText = uniMediaType === 'image' ? '📷 Görsel' : uniMediaType === 'video' ? '🎥 Video' : '📎 Dosya';
+            } else {
+                console.log('⏭ Görüntülenemeyen mesaj tipi, atlanıyor');
+                return res.status(200).json({ status: 'ok', note: 'unsupported message type' });
+            }
         }
 
         // Platform belirle (INSTAGRAM veya WHATSAPP)
@@ -1050,6 +1116,8 @@ router.post('/unipile/:companyId', async (req, res) => {
                 phone: senderPhone,
                 unipile_chat_id: chatId,
                 is_group: isGroup,
+                media_url: uniMediaUrl,
+                media_type: uniMediaType,
             });
         }
 
@@ -1062,10 +1130,10 @@ router.post('/unipile/:companyId', async (req, res) => {
 
 // Dışarıdan gönderilen mesajları (telefondan, dış servislerden) panele kaydet
 async function processOutboundMessage(db, io, data) {
-    const { company_id, platform_id, content, source, customer_name, unipile_chat_id, is_group } = data;
+    const { company_id, platform_id, content, source, customer_name, unipile_chat_id, is_group, media_url, media_type } = data;
     const now = new Date().toISOString();
 
-    if (!platform_id || !content) return null;
+    if (!platform_id || (!content && !media_url)) return null;
 
     // Müşteriyi bul
     let customer;
@@ -1111,9 +1179,9 @@ async function processOutboundMessage(db, io, data) {
 
     // Mesajı outbound olarak kaydet
     const msgResult = db.prepare(`
-        INSERT INTO messages (company_id, conversation_id, customer_id, content, source, direction, created_at)
-        VALUES (?, ?, ?, ?, ?, 'outbound', ?)
-    `).run(company_id, conversation.id, customer.id, content, source, now);
+        INSERT INTO messages (company_id, conversation_id, customer_id, content, source, direction, media_url, media_type, created_at)
+        VALUES (?, ?, ?, ?, ?, 'outbound', ?, ?, ?)
+    `).run(company_id, conversation.id, customer.id, content || '', source, media_url || null, media_type || null, now);
 
     const outboundMessage = db.prepare('SELECT * FROM messages WHERE id = ?').get(msgResult.lastInsertRowid);
 

@@ -92,6 +92,17 @@ function initDB() {
     }
   } catch (err) { }
 
+  // Migration: messages tablosuna media_url ve media_type ekle (görsel desteği)
+  try {
+    const msgInfo = db.prepare(`PRAGMA table_info(messages)`).all();
+    if (msgInfo.length > 0 && !msgInfo.some(c => c.name === 'media_url')) {
+      db.exec(`ALTER TABLE messages ADD COLUMN media_url TEXT DEFAULT NULL`);
+    }
+    if (msgInfo.length > 0 && !msgInfo.some(c => c.name === 'media_type')) {
+      db.exec(`ALTER TABLE messages ADD COLUMN media_type TEXT DEFAULT NULL`);
+    }
+  } catch (err) { }
+
   // Migration: Companies tablosuna platform bazlı AI toggle ekle
   try {
     const compInfo2 = db.prepare(`PRAGMA table_info(companies)`).all();
