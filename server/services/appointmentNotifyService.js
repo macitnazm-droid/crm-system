@@ -37,7 +37,8 @@ function formatAppointmentMessage(appointment, type = 'confirmation') {
 }
 
 /**
- * Randevu bildirimi gönder (WhatsApp ve/veya SMS)
+ * Randevu bildirimi gönder (WhatsApp/SMS/Instagram — mevcut entegrasyon üzerinden)
+ * Toggle bağımsız çalışır — her zaman göndermeyi dener
  */
 async function sendAppointmentNotification(db, companyId, appointment, type = 'confirmation') {
     const company = db.prepare(
@@ -48,8 +49,6 @@ async function sendAppointmentNotification(db, companyId, appointment, type = 'c
         console.log(`⚠️ [NOTIFY] Company bulunamadı: ${companyId}`);
         return;
     }
-
-    console.log(`📢 [NOTIFY] Bildirim kontrolü: whatsapp=${company.appointment_whatsapp_notify}, sms=${company.appointment_sms_notify}, phone=${appointment.phone}, type=${type}`);
 
     // Hizmet ve personel adını al
     let serviceName = null;
@@ -71,10 +70,28 @@ async function sendAppointmentNotification(db, companyId, appointment, type = 'c
 
     const message = formatAppointmentMessage(msgData, type);
     const phone = appointment.phone;
-    const results = { whatsapp: null, sms: null };
+    const results = { whatsapp: null, sms: null, fallback: null };
 
-    // WhatsApp bildirim
-    if (company.appointment_whatsapp_notify && phone) {
+    console.log(`📢 [NOTIFY] Bildirim başlıyor: type=${type}, phone=${phone}, whatsapp_toggle=${company.appointment_whatsapp_notify}, sms_toggle=${company.appointment_sms_notify}`);
+
+    // Müşterinin conversation source'unu bul (Instagram'dan mı, WhatsApp'tan mı geldi?)
+    let conversationSource = null;
+    if (appointment.conversation_id) {
+        const conv = db.prepare('SELECT source FROM conversations WHERE id = ?').get(appointment.conversation_id);
+        conversationSource = conv?.source;
+    }
+
+    // Aktif entegrasyonları kontrol et
+    const allIntegrations = db.prepare(
+        'SELECT platform, provider, is_active FROM integration_settings WHERE company_id = ? AND is_active = 1'
+    ).all(companyId);
+    const hasWhatsApp = allIntegrations.some(i => i.platform === 'whatsapp');
+    const hasInstagram = allIntegrations.some(i => i.platform === 'instagram');
+
+    console.log(`📢 [NOTIFY] Entegrasyonlar: whatsapp=${hasWhatsApp}, instagram=${hasInstagram}, conversation_source=${conversationSource}`);
+
+    // 1) WhatsApp ile göndermeyi dene (telefon numarası varsa)
+    if (phone && hasWhatsApp) {
         try {
             const result = await sendOutboundMessage(db, {
                 companyId,
@@ -84,24 +101,54 @@ async function sendAppointmentNotification(db, companyId, appointment, type = 'c
                 text: message
             });
             results.whatsapp = result;
-            console.log(`📱 Randevu WhatsApp bildirimi ${result.sent ? 'gönderildi' : 'gönderilemedi'}: ${appointment.customer_name}`);
+            console.log(`📱 [NOTIFY] WhatsApp ${result.sent ? '✅ gönderildi' : '❌ gönderilemedi'}: ${appointment.customer_name} (reason: ${result.reason || 'ok'})`);
         } catch (err) {
-            console.error('WhatsApp randevu bildirimi hatası:', err.message);
+            console.error('📱 [NOTIFY] WhatsApp hatası:', err.message);
             results.whatsapp = { sent: false, reason: err.message };
         }
     }
 
-    // SMS bildirim
+    // 2) WhatsApp başarısız veya yoksa, konuşmanın orijinal kanalından gönder (Instagram vb.)
+    if ((!results.whatsapp || !results.whatsapp.sent) && conversationSource && conversationSource !== 'whatsapp') {
+        try {
+            // Müşterinin platform ID'sini bul
+            const customer = db.prepare('SELECT instagram_id, whatsapp_id, messenger_id FROM customers WHERE id = ?').get(appointment.customer_id);
+            const recipientId = conversationSource === 'instagram' ? customer?.instagram_id
+                : conversationSource === 'messenger' ? customer?.messenger_id
+                : null;
+
+            if (recipientId) {
+                console.log(`📢 [NOTIFY] Fallback: ${conversationSource} üzerinden gönderiliyor (recipientId: ${recipientId})`);
+                const result = await sendOutboundMessage(db, {
+                    companyId,
+                    source: conversationSource,
+                    recipientId: recipientId,
+                    recipientPhone: phone,
+                    text: message
+                });
+                results.fallback = result;
+                console.log(`📨 [NOTIFY] ${conversationSource} fallback ${result.sent ? '✅ gönderildi' : '❌ gönderilemedi'}: ${appointment.customer_name}`);
+            }
+        } catch (err) {
+            console.error(`📨 [NOTIFY] Fallback hatası (${conversationSource}):`, err.message);
+            results.fallback = { sent: false, reason: err.message };
+        }
+    }
+
+    // 3) SMS bildirim (toggle'a bağlı)
     if (company.appointment_sms_notify && phone && company.sms_usercode && company.sms_password) {
         try {
             const smsResult = await sendSMS(company, phone, message);
             results.sms = smsResult;
-            console.log(`📩 Randevu SMS bildirimi ${smsResult.sent ? 'gönderildi' : 'gönderilemedi'}: ${appointment.customer_name}`);
+            console.log(`📩 [NOTIFY] SMS ${smsResult.sent ? '✅ gönderildi' : '❌ gönderilemedi'}: ${appointment.customer_name}`);
         } catch (err) {
-            console.error('SMS randevu bildirimi hatası:', err.message);
+            console.error('📩 [NOTIFY] SMS hatası:', err.message);
             results.sms = { sent: false, reason: err.message };
         }
     }
+
+    const anySent = results.whatsapp?.sent || results.fallback?.sent || results.sms?.sent;
+    console.log(`📢 [NOTIFY] Sonuç: ${anySent ? '✅ En az bir kanal başarılı' : '❌ Hiçbir kanaldan gönderilemedi'}`);
 
     return results;
 }
@@ -146,7 +193,7 @@ async function sendSMS(company, phone, message) {
 function checkReminders(db) {
     try {
         const companies = db.prepare(
-            'SELECT id, appointment_whatsapp_notify, appointment_sms_notify, appointment_reminder_minutes FROM companies WHERE is_active = 1 AND (appointment_whatsapp_notify = 1 OR appointment_sms_notify = 1)'
+            'SELECT id, appointment_whatsapp_notify, appointment_sms_notify, appointment_reminder_minutes FROM companies WHERE is_active = 1'
         ).all();
 
         for (const company of companies) {

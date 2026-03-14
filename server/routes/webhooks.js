@@ -667,6 +667,8 @@ async function processIncomingMessage(db, io, data) {
                 console.log(`📢 [WEBHOOK] Randevu bildirimi tetikleniyor: ${apptCustomerName} → ${apptDate} ${apptTime}`);
                 sendAppointmentNotification(db, company_id, {
                     customer_name: apptCustomerName,
+                    customer_id: customer.id,
+                    conversation_id: conversation.id,
                     phone: customer.phone || phone || '',
                     appointment_date: apptDate,
                     start_time: apptTime,
