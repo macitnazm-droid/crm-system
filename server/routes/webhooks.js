@@ -481,6 +481,11 @@ async function processIncomingMessage(db, io, data) {
             updates.push('instagram_username = ?');
             params.push(username);
         }
+        // Telefon numarası yoksa ve webhook'tan geldiyse kaydet
+        if (phone && !customer.phone) {
+            updates.push('phone = ?');
+            params.push(phone);
+        }
         params.push(customer.id, company_id);
         db.prepare(`UPDATE customers SET ${updates.join(', ')} WHERE id = ? AND company_id = ?`).run(...params);
     }
@@ -881,7 +886,24 @@ router.post('/unipile/:companyId', async (req, res) => {
         // Doğru company_id'yi integration'dan al (URL'deki yerine)
         const actualCompanyId = integration.company_id;
 
-        console.log(`📨 Unipile webhook (${source}, company:${actualCompanyId}): ${senderName || senderId} → "${messageText.substring(0, 60)}"`);
+        // Telefon numarasını parse et (attendees veya sender'dan)
+        let senderPhone = null;
+        if (body.attendees) {
+            // attendees[0] genelde karşı taraf (müşteri)
+            for (const att of body.attendees) {
+                const ph = att.attendee_specifics?.phone_number;
+                if (ph) { senderPhone = ph; break; }
+            }
+        }
+        // Sender'ın kendi telefonu da olabilir (ama genelde bizim numara)
+        if (!senderPhone && body.sender?.attendee_specifics?.phone_number) {
+            // sender bizim hesabımızsa kullanma
+            if (!body.is_sender) {
+                senderPhone = body.sender.attendee_specifics.phone_number;
+            }
+        }
+
+        console.log(`📨 Unipile webhook (${source}, company:${actualCompanyId}): ${senderName || senderId} → "${messageText.substring(0, 60)}" phone:${senderPhone || 'yok'}`);
 
         await processIncomingMessage(db, io, {
             company_id: actualCompanyId,
@@ -889,6 +911,7 @@ router.post('/unipile/:companyId', async (req, res) => {
             content: messageText,
             source,
             customer_name: senderName,
+            phone: senderPhone,
             unipile_chat_id: chatId,
         });
 
