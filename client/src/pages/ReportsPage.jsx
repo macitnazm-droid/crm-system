@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { reportsAPI, appointmentsAPI } from '../lib/api';
-import { BarChart3, TrendingUp, Users, Bot, UserCheck, Percent, Calendar, CheckCircle, XCircle, Clock, Search } from 'lucide-react';
+import { BarChart3, TrendingUp, Users, Bot, UserCheck, Percent, Calendar, CheckCircle, XCircle, Clock, Search, ChevronLeft, ChevronRight, Info } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 
 export default function ReportsPage() {
@@ -12,6 +12,9 @@ export default function ReportsPage() {
     const [loading, setLoading] = useState(true);
     const [scanning, setScanning] = useState(false);
     const [scanResult, setScanResult] = useState(null);
+    const [calMonth, setCalMonth] = useState(new Date().getMonth());
+    const [calYear, setCalYear] = useState(new Date().getFullYear());
+    const [apptPeriod, setApptPeriod] = useState('daily'); // daily, weekly, monthly
 
     useEffect(() => { loadData(); }, []);
 
@@ -56,6 +59,91 @@ export default function ReportsPage() {
 
     if (loading) return <div className="loading-center"><div className="loading-spinner" /></div>;
 
+    // ===== Randevu Takvimi Hesaplamaları =====
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+    // Takvim günleri oluştur
+    const firstDay = new Date(calYear, calMonth, 1);
+    const lastDay = new Date(calYear, calMonth + 1, 0);
+    const startWeekday = (firstDay.getDay() + 6) % 7; // Pazartesi = 0
+    const daysInMonth = lastDay.getDate();
+
+    // Tarihe göre randevu sayıları
+    const apptCountByDate = useMemo(() => {
+        const counts = {};
+        (appointments || []).forEach(a => {
+            const d = a.appointment_date;
+            if (d) counts[d] = (counts[d] || 0) + 1;
+        });
+        return counts;
+    }, [appointments]);
+
+    // Period hesaplama
+    const apptStats = useMemo(() => {
+        const now = new Date();
+        let filtered = appointments || [];
+
+        if (apptPeriod === 'daily') {
+            filtered = filtered.filter(a => a.appointment_date === todayStr);
+        } else if (apptPeriod === 'weekly') {
+            const weekStart = new Date(now);
+            weekStart.setDate(now.getDate() - now.getDay() + (now.getDay() === 0 ? -6 : 1));
+            const weekStartStr = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
+            const weekEnd = new Date(weekStart);
+            weekEnd.setDate(weekStart.getDate() + 6);
+            const weekEndStr = `${weekEnd.getFullYear()}-${String(weekEnd.getMonth() + 1).padStart(2, '0')}-${String(weekEnd.getDate()).padStart(2, '0')}`;
+            filtered = filtered.filter(a => a.appointment_date >= weekStartStr && a.appointment_date <= weekEndStr);
+        } else {
+            const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+            filtered = filtered.filter(a => a.appointment_date?.startsWith(monthStr));
+        }
+
+        const total = filtered.length;
+        const completed = filtered.filter(a => a.status === 'completed').length;
+        const cancelled = filtered.filter(a => a.status === 'cancelled').length;
+
+        // Kaynak dağılımı
+        const sourceCounts = {};
+        filtered.forEach(a => {
+            const src = a.source || a.customer_source || 'İşletme Tarafından';
+            const label = src === 'ai' ? 'İşletme Tarafından' : src === 'manual' ? 'İşletme Tarafından' : src === 'website' ? 'İşletme Websitesi' : src === 'salon_randevu' ? 'SalonRandevu.com' : 'İşletme Tarafından';
+            sourceCounts[label] = (sourceCounts[label] || 0) + 1;
+        });
+
+        return { total, completed, cancelled, sourceCounts };
+    }, [appointments, apptPeriod, todayStr]);
+
+    const sourceColors = {
+        'İşletme Tarafından': '#a855f7',
+        'İşletme Websitesi': '#6b7280',
+        'SalonRandevu.com': '#f59e0b'
+    };
+
+    const sourcePieData = Object.entries(apptStats.sourceCounts).map(([name, value]) => ({
+        name, value, fill: sourceColors[name] || '#6366f1'
+    }));
+
+    const totalSourceCount = sourcePieData.reduce((s, d) => s + d.value, 0);
+
+    const monthNames = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
+    const dayNames = ['Pts', 'Sal', 'Çar', 'Per', 'Cum', 'Cts', 'Paz'];
+
+    const prevMonth = () => {
+        if (calMonth === 0) { setCalMonth(11); setCalYear(calYear - 1); }
+        else setCalMonth(calMonth - 1);
+    };
+    const nextMonth = () => {
+        if (calMonth === 11) { setCalMonth(0); setCalYear(calYear + 1); }
+        else setCalMonth(calMonth + 1);
+    };
+
+    const periodTabs = [
+        { key: 'daily', label: 'Günlük' },
+        { key: 'weekly', label: 'Son 7 gün' },
+        { key: 'monthly', label: 'Son 30 gün' },
+    ];
+
     const catChartData = categories ? [
         { name: 'Hot', value: categories.categories.hot, fill: '#ef4444' },
         { name: 'Warm', value: categories.categories.warm, fill: '#f59e0b' },
@@ -91,7 +179,175 @@ export default function ReportsPage() {
                 <p>Performans metrikleri ve analitik veriler</p>
             </div>
 
-            {/* Randevular - EN ÜSTTE */}
+            {/* Randevu Özet: Takvim + Ayrıntılar + İstatistikler */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 20, marginBottom: 24 }}>
+                {/* Randevu Takvimi */}
+                <div className="glass-card" style={{ padding: 20 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 16 }}>
+                        <h3 style={{ fontSize: 15, fontWeight: 600 }}>Randevu Takvimi</h3>
+                        <Info size={14} style={{ color: 'var(--accent-primary)', cursor: 'pointer' }} title="Tarihlerdeki sayılar o günkü randevu adedini gösterir" />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                        <button onClick={prevMonth} className="btn btn-ghost btn-sm" style={{ padding: 4 }}><ChevronLeft size={16} /></button>
+                        <span style={{ fontWeight: 600, fontSize: 14 }}>{monthNames[calMonth]} {calYear}</span>
+                        <button onClick={nextMonth} className="btn btn-ghost btn-sm" style={{ padding: 4 }}><ChevronRight size={16} /></button>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, textAlign: 'center' }}>
+                        {dayNames.map(d => (
+                            <div key={d} style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', padding: '4px 0' }}>{d}</div>
+                        ))}
+                        {Array.from({ length: startWeekday }).map((_, i) => <div key={`e${i}`} />)}
+                        {Array.from({ length: daysInMonth }).map((_, i) => {
+                            const day = i + 1;
+                            const dateStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                            const count = apptCountByDate[dateStr] || 0;
+                            const isToday = dateStr === todayStr;
+                            return (
+                                <div key={day} style={{
+                                    position: 'relative',
+                                    padding: '6px 0',
+                                    borderRadius: 'var(--radius-sm)',
+                                    background: isToday ? 'var(--accent-primary)' : 'transparent',
+                                    color: isToday ? 'white' : 'var(--text-primary)',
+                                    fontWeight: isToday ? 700 : 400,
+                                    fontSize: 13,
+                                    cursor: count > 0 ? 'pointer' : 'default',
+                                }}>
+                                    {day}
+                                    {count > 0 && (
+                                        <span style={{
+                                            position: 'absolute',
+                                            top: 0,
+                                            right: 2,
+                                            fontSize: 9,
+                                            fontWeight: 700,
+                                            background: isToday ? 'white' : 'var(--accent-primary)',
+                                            color: isToday ? 'var(--accent-primary)' : 'white',
+                                            borderRadius: '50%',
+                                            width: 15,
+                                            height: 15,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            lineHeight: 1,
+                                        }}>
+                                            {count}
+                                        </span>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                {/* Randevu Ayrıntıları */}
+                <div className="glass-card" style={{ padding: 20 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 16 }}>
+                        <h3 style={{ fontSize: 15, fontWeight: 600 }}>Randevu Ayrıntıları</h3>
+                        <Info size={14} style={{ color: 'var(--accent-primary)' }} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 0, marginBottom: 20, background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)', padding: 3 }}>
+                        {periodTabs.map(t => (
+                            <button key={t.key} onClick={() => setApptPeriod(t.key)}
+                                style={{
+                                    flex: 1, padding: '8px 0', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer',
+                                    borderRadius: 'var(--radius-sm)',
+                                    background: apptPeriod === t.key ? 'var(--accent-primary)' : 'transparent',
+                                    color: apptPeriod === t.key ? 'white' : 'var(--text-secondary)',
+                                    transition: 'all var(--transition-fast)',
+                                }}>{t.label}</button>
+                        ))}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                            <div style={{ width: 44, height: 44, borderRadius: 'var(--radius-md)', background: 'rgba(245,158,11,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <Clock size={20} style={{ color: '#f59e0b' }} />
+                            </div>
+                            <div>
+                                <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Oluşturulanlar</div>
+                                <div style={{ fontSize: 28, fontWeight: 700 }}>{apptStats.total}</div>
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                            <div style={{ width: 44, height: 44, borderRadius: 'var(--radius-md)', background: 'rgba(16,185,129,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <CheckCircle size={20} style={{ color: '#10b981' }} />
+                            </div>
+                            <div>
+                                <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Sonuçlananlar</div>
+                                <div style={{ fontSize: 28, fontWeight: 700 }}>{apptStats.completed}</div>
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                            <div style={{ width: 44, height: 44, borderRadius: 'var(--radius-md)', background: 'rgba(239,68,68,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <XCircle size={20} style={{ color: '#ef4444' }} />
+                            </div>
+                            <div>
+                                <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Sonuçlanmayanlar</div>
+                                <div style={{ fontSize: 28, fontWeight: 700 }}>{apptStats.cancelled}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Randevu İstatistikleri */}
+                <div className="glass-card" style={{ padding: 20 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 16 }}>
+                        <h3 style={{ fontSize: 15, fontWeight: 600 }}>Randevu İstatistikleri</h3>
+                        <Info size={14} style={{ color: 'var(--accent-primary)' }} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 0, marginBottom: 20, background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)', padding: 3 }}>
+                        {periodTabs.map(t => (
+                            <button key={t.key} onClick={() => setApptPeriod(t.key)}
+                                style={{
+                                    flex: 1, padding: '8px 0', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer',
+                                    borderRadius: 'var(--radius-sm)',
+                                    background: apptPeriod === t.key ? 'var(--accent-primary)' : 'transparent',
+                                    color: apptPeriod === t.key ? 'white' : 'var(--text-secondary)',
+                                    transition: 'all var(--transition-fast)',
+                                }}>{t.label}</button>
+                        ))}
+                    </div>
+                    <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
+                        {/* Donut chart */}
+                        <div style={{ width: 140, height: 140, flexShrink: 0 }}>
+                            {totalSourceCount > 0 ? (
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie data={sourcePieData} cx="50%" cy="50%" innerRadius={40} outerRadius={60} paddingAngle={3} dataKey="value" stroke="none">
+                                            {sourcePieData.map((e, i) => <Cell key={i} fill={e.fill} />)}
+                                        </Pie>
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            ) : (
+                                <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <div style={{ width: 120, height: 120, borderRadius: '50%', border: '12px solid var(--border-color)', opacity: 0.4 }} />
+                                </div>
+                            )}
+                        </div>
+                        {/* Legend */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, flex: 1 }}>
+                            {['İşletme Tarafından', 'İşletme Websitesi', 'SalonRandevu.com'].map(label => {
+                                const val = apptStats.sourceCounts[label] || 0;
+                                const color = sourceColors[label];
+                                const pct = totalSourceCount > 0 ? Math.round((val / totalSourceCount) * 100) : 0;
+                                return (
+                                    <div key={label}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                                            <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{label}</span>
+                                            <span style={{ fontSize: 13, fontWeight: 700 }}>{val}</span>
+                                        </div>
+                                        <div style={{ height: 6, background: 'var(--bg-tertiary)', borderRadius: 3, overflow: 'hidden' }}>
+                                            <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 3, transition: 'width 0.3s' }} />
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Randevular - Tablo */}
             <div className="glass-card" style={{ padding: 0, overflow: 'hidden', marginBottom: 24 }}>
                 <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: 10 }}>
                     <Calendar size={18} style={{ color: 'var(--accent-primary)' }} />
