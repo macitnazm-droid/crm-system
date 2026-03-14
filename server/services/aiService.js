@@ -22,12 +22,54 @@ class AIService {
 
     async generateClaudeResponse(conversationHistory, systemPrompt, customerInfo) {
         try {
-            const messages = conversationHistory.map(msg => ({
-                role: msg.direction === 'inbound' ? 'user' : 'assistant',
-                content: msg.content
-            }));
+            const fs = require('fs');
+            const path = require('path');
+            const messages = conversationHistory.map(msg => {
+                const role = msg.direction === 'inbound' ? 'user' : 'assistant';
 
-            const system = `${systemPrompt}\n\nMüşteri Bilgileri:\n- İsim: ${customerInfo.name || 'Bilinmiyor'}\n- Kaynak: ${customerInfo.source || 'Bilinmiyor'}\n- Kategori: ${customerInfo.category || 'Belirlenmemiş'}\n\nÖNEMLİ: Yanıtlarında kesinlikle markdown formatı kullanma (**, *, #, -, > gibi). Düz metin kullan. Instagram ve WhatsApp'ta markdown görünmez.`;
+                // Görsel varsa multimodal mesaj oluştur
+                if (msg.media_url && ['image', 'sticker'].includes(msg.media_type) && role === 'user') {
+                    const content = [];
+
+                    // Lokal dosya ise base64'e çevir
+                    if (msg.media_url.startsWith('/uploads/')) {
+                        try {
+                            const filePath = path.join(__dirname, '..', msg.media_url);
+                            if (fs.existsSync(filePath)) {
+                                const fileData = fs.readFileSync(filePath);
+                                const base64 = fileData.toString('base64');
+                                const ext = path.extname(filePath).toLowerCase();
+                                const mediaTypes = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp' };
+                                content.push({
+                                    type: 'image',
+                                    source: { type: 'base64', media_type: mediaTypes[ext] || 'image/jpeg', data: base64 }
+                                });
+                            }
+                        } catch (e) {
+                            console.warn('Görsel AI\'ya gönderilemedi:', e.message);
+                        }
+                    } else if (msg.media_url.startsWith('http')) {
+                        // Harici URL ise direkt gönder
+                        content.push({
+                            type: 'image',
+                            source: { type: 'url', url: msg.media_url }
+                        });
+                    }
+
+                    // Metin varsa ekle
+                    if (msg.content && !['📷 Görsel', '📎 Dosya'].includes(msg.content)) {
+                        content.push({ type: 'text', text: msg.content });
+                    } else {
+                        content.push({ type: 'text', text: 'Müşteri bu görseli gönderdi. Görseli analiz et ve buna göre yanıt ver.' });
+                    }
+
+                    return { role, content };
+                }
+
+                return { role, content: msg.content || '...' };
+            });
+
+            const system = `${systemPrompt}\n\nMüşteri Bilgileri:\n- İsim: ${customerInfo.name || 'Bilinmiyor'}\n- Kaynak: ${customerInfo.source || 'Bilinmiyor'}\n- Kategori: ${customerInfo.category || 'Belirlenmemiş'}\n\nÖNEMLİ: Yanıtlarında kesinlikle markdown formatı kullanma (**, *, #, -, > gibi). Düz metin kullan. Instagram ve WhatsApp'ta markdown görünmez.\n\nGÖRSEL ANALİZ: Müşteri görsel gönderdiğinde görseli dikkatlice analiz et. Örneğin nail art görseli ise tasarımı yorumla, ürün görseli ise ürünü tanımla, referans görseli ise benzer hizmet öner. Görsele uygun, doğal ve yardımcı bir yanıt ver.`;
 
             const response = await this.claude.messages.create({
                 model: 'claude-sonnet-4-6',
