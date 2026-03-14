@@ -98,18 +98,22 @@ router.post('/instagram', async (req, res) => {
                 const messaging = e.messaging || [];
                 const activeIntegration = integration;
                 for (const event of messaging) {
-                    // Echo kontrolü — kendi gönderdiğimiz mesajları atla
-                    if (event.message?.is_echo) {
-                        console.log('⏭ Instagram echo mesaj, atlanıyor');
-                        continue;
-                    }
-
                     const senderId = event.sender?.id;
                     const messageText = event.message?.text;
+                    const recipientId = event.recipient?.id;
 
-                    // Kendi sayfamızdan gelen mesajları atla (echo flag olmasa bile)
-                    if (senderId === pageId) {
-                        console.log(`⏭ Kendi sayfamızdan mesaj (sender=${senderId} = page=${pageId}), atlanıyor`);
+                    // Echo mesajı = bizim gönderdiğimiz mesaj (panelden veya telefondan)
+                    if (event.message?.is_echo || senderId === pageId) {
+                        if (messageText && !wasSentByUs(messageText)) {
+                            // Panelden değil, dışarıdan gönderilmiş → kaydet
+                            console.log(`📤 Instagram giden mesaj: → "${messageText.substring(0, 60)}"`);
+                            await processOutboundMessage(db, io, {
+                                company_id: companyId,
+                                platform_id: recipientId || senderId,
+                                content: messageText,
+                                source: 'instagram',
+                            });
+                        }
                         continue;
                     }
 
@@ -218,13 +222,22 @@ router.post('/messenger', async (req, res) => {
 
                 const messaging = e.messaging || [];
                 for (const event of messaging) {
-                    if (event.message?.is_echo) {
-                        console.log('⏭ Messenger echo mesaj, atlanıyor');
-                        continue;
-                    }
-
                     const senderId = event.sender?.id;
                     const messageText = event.message?.text;
+                    const recipientId = event.recipient?.id;
+
+                    if (event.message?.is_echo) {
+                        if (messageText && !wasSentByUs(messageText)) {
+                            console.log(`📤 Messenger giden mesaj: → "${messageText.substring(0, 60)}"`);
+                            await processOutboundMessage(db, io, {
+                                company_id: companyId,
+                                platform_id: recipientId || senderId,
+                                content: messageText,
+                                source: 'messenger',
+                            });
+                        }
+                        continue;
+                    }
 
                     if (senderId && messageText) {
                         // Graph API'den kullanıcı profil bilgisi çek
