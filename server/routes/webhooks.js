@@ -934,6 +934,12 @@ router.post('/unipile/:companyId', async (req, res) => {
             return res.status(200).json({ status: 'ok', note: 'no message content' });
         }
 
+        // "Unipile cannot display" mesajlarını atla
+        if (messageText.includes('Unipile cannot display') || messageText.includes('cannot display this type')) {
+            console.log('⏭ Görüntülenemeyen mesaj tipi, atlanıyor');
+            return res.status(200).json({ status: 'ok', note: 'unsupported message type' });
+        }
+
         // Platform belirle (INSTAGRAM veya WHATSAPP)
         const source = provider.includes('WHATSAPP') ? 'whatsapp' : 'instagram';
 

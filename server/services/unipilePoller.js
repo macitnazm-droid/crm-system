@@ -65,7 +65,10 @@ async function pollIntegration(db, io, integration) {
         const isGroup = chat.is_group === true || chat.type === 'group' || chat.group_name
             || (chat.attendees && chat.attendees.length > 2)
             || (chat.name && chat.name.includes(','));
-        if (isGroup) continue;
+        if (isGroup) {
+            console.log(`⏭ Grup atlandı: "${chat.name}" (type=${chat.type}, is_group=${chat.is_group}, attendees=${chat.attendees?.length})`);
+            continue;
+        }
 
         // Konuşma since'den eski ise atla
         const chatUpdated = chat.updated_at || chat.last_message_at || chat.timestamp;
@@ -105,6 +108,9 @@ async function pollIntegration(db, io, integration) {
             const text = msg.text || msg.body || msg.content;
 
             if (!senderId || !text) continue;
+
+            // "Unipile cannot display" mesajlarını atla (grup mesajları, sticker, poll vb.)
+            if (text.includes('Unipile cannot display') || text.includes('cannot display this type')) continue;
 
             // AI'ın kendi gönderdiği mesajı geri alıyorsak atla
             if (wasSentByUs(text)) {
