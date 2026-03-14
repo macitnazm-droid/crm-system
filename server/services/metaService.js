@@ -2,46 +2,43 @@
 
 const GRAPH_API_BASE = 'https://graph.facebook.com/v21.0';
 
-// Facebook Page ID cache — token başına bir kez çekilir
-const pageIdCache = new Map();
+// Page Token cache — system user token'dan page token'ları çeker ve cache'ler
+const pageTokenCache = new Map();
 
 /**
- * System User Token ile Facebook Page ID'yi bul
- * me/accounts'tan sayfa listesini çeker ve cache'ler
+ * System User Token'dan Page Access Token al
+ * me/accounts çağrısı her sayfa için page token döner
+ * Bu page token ile me/messages çalışır
  */
-async function getFacebookPageId(accessToken) {
-    if (pageIdCache.has(accessToken)) return pageIdCache.get(accessToken);
+async function getPageToken(accessToken) {
+    if (pageTokenCache.has(accessToken)) return pageTokenCache.get(accessToken);
     try {
         const fetch = (await import('node-fetch')).default;
-        const res = await fetch(`${GRAPH_API_BASE}/me/accounts?access_token=${accessToken}&fields=id,name,instagram_business_account`);
+        const res = await fetch(`${GRAPH_API_BASE}/me/accounts?access_token=${accessToken}&fields=id,name,access_token`);
         const data = await res.json();
         if (data.data && data.data.length > 0) {
-            const pageId = data.data[0].id;
-            pageIdCache.set(accessToken, pageId);
-            console.log(`📄 Facebook Page ID bulundu: ${pageId} (${data.data[0].name})`);
-            return pageId;
-        }
-        // me/accounts boşsa, me'yi dene (Page Token durumu)
-        const meRes = await fetch(`${GRAPH_API_BASE}/me?fields=id,name&access_token=${accessToken}`);
-        const meData = await meRes.json();
-        if (meData.id) {
-            pageIdCache.set(accessToken, meData.id);
-            return meData.id;
+            const page = data.data[0];
+            const pageToken = page.access_token;
+            if (pageToken && pageToken !== accessToken) {
+                pageTokenCache.set(accessToken, pageToken);
+                console.log(`🔑 Page Token alındı: ${page.name} (${page.id})`);
+                return pageToken;
+            }
         }
     } catch (err) {
-        console.error('Facebook Page ID bulunamadı:', err.message);
+        console.error('Page Token alınamadı:', err.message);
     }
-    return null;
+    // Fallback: token zaten page token olabilir
+    return accessToken;
 }
 
 /**
  * Instagram DM gönder (Meta Graph API)
  */
-async function sendInstagramMessage(accessToken, recipientId, text, facebookPageId) {
+async function sendInstagramMessage(accessToken, recipientId, text) {
     const fetch = (await import('node-fetch')).default;
-    const pageId = facebookPageId || await getFacebookPageId(accessToken);
-    const endpoint = pageId ? `${pageId}/messages` : 'me/messages';
-    const url = `${GRAPH_API_BASE}/${endpoint}?access_token=${accessToken}`;
+    const token = await getPageToken(accessToken);
+    const url = `${GRAPH_API_BASE}/me/messages?access_token=${token}`;
     const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -83,11 +80,10 @@ async function sendWhatsAppMessage(accessToken, phoneNumberId, recipientPhone, t
 /**
  * Messenger mesaj gönder (Meta Graph API)
  */
-async function sendMessengerMessage(accessToken, recipientId, text, facebookPageId) {
+async function sendMessengerMessage(accessToken, recipientId, text) {
     const fetch = (await import('node-fetch')).default;
-    const pageId = facebookPageId || await getFacebookPageId(accessToken);
-    const endpoint = pageId ? `${pageId}/messages` : 'me/messages';
-    const url = `${GRAPH_API_BASE}/${endpoint}?access_token=${accessToken}`;
+    const token = await getPageToken(accessToken);
+    const url = `${GRAPH_API_BASE}/me/messages?access_token=${token}`;
     const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -127,11 +123,10 @@ async function verifyToken(accessToken) {
 /**
  * Instagram/Messenger'a görsel gönder
  */
-async function sendImageMessage(accessToken, recipientId, imageUrl, platform = 'instagram', facebookPageId) {
+async function sendImageMessage(accessToken, recipientId, imageUrl, platform = 'instagram') {
     const fetch = (await import('node-fetch')).default;
-    const pageId = facebookPageId || await getFacebookPageId(accessToken);
-    const endpoint = pageId ? `${pageId}/messages` : 'me/messages';
-    const url = `${GRAPH_API_BASE}/${endpoint}?access_token=${accessToken}`;
+    const token = await getPageToken(accessToken);
+    const url = `${GRAPH_API_BASE}/me/messages?access_token=${token}`;
     const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -202,13 +197,12 @@ async function sendOutboundMessage(db, { companyId, source, recipientId, recipie
 
     if (integration.provider === 'meta') {
         try {
-            const fbPageId = integration.facebook_page_id || null;
             if (source === 'instagram' && recipientId) {
                 if (mediaUrl && mediaType === 'image') {
-                    await sendImageMessage(integration.api_key, recipientId, mediaUrl, 'instagram', fbPageId);
-                    if (text) await sendInstagramMessage(integration.api_key, recipientId, text, fbPageId);
+                    await sendImageMessage(integration.api_key, recipientId, mediaUrl, 'instagram');
+                    if (text) await sendInstagramMessage(integration.api_key, recipientId, text);
                 } else {
-                    await sendInstagramMessage(integration.api_key, recipientId, text, fbPageId);
+                    await sendInstagramMessage(integration.api_key, recipientId, text);
                 }
                 console.log(`📤 Meta IG mesaj gönderildi: "${(text || '📷').substring(0, 50)}"`);
                 return { sent: true, provider: 'meta' };
@@ -222,10 +216,10 @@ async function sendOutboundMessage(db, { companyId, source, recipientId, recipie
                 return { sent: true, provider: 'meta' };
             } else if (source === 'messenger' && recipientId) {
                 if (mediaUrl && mediaType === 'image') {
-                    await sendImageMessage(integration.api_key, recipientId, mediaUrl, 'messenger', fbPageId);
-                    if (text) await sendMessengerMessage(integration.api_key, recipientId, text, fbPageId);
+                    await sendImageMessage(integration.api_key, recipientId, mediaUrl, 'messenger');
+                    if (text) await sendMessengerMessage(integration.api_key, recipientId, text);
                 } else {
-                    await sendMessengerMessage(integration.api_key, recipientId, text, fbPageId);
+                    await sendMessengerMessage(integration.api_key, recipientId, text);
                 }
                 console.log(`📤 Meta Messenger mesaj gönderildi: "${(text || '📷').substring(0, 50)}"`);
                 return { sent: true, provider: 'meta' };
