@@ -402,7 +402,7 @@ router.post('/simulate', async (req, res) => {
 // Gelen mesajı işle
 async function processIncomingMessage(db, io, data) {
 
-    const { company_id, platform_id, content, source, customer_name, phone, instagram_id, unipile_chat_id, profile_pic, username } = data;
+    const { company_id, platform_id, content, source, customer_name, phone, instagram_id, unipile_chat_id, profile_pic, username, is_group } = data;
     const now = new Date().toISOString();
 
     // Duplikasyon kontrolü: Aynı müşteriden, aynı içerikle, son 60 saniye içinde mesaj var mı?
@@ -533,7 +533,7 @@ async function processIncomingMessage(db, io, data) {
     } catch (e) { }
 
     let aiMessage = null;
-    if (conversation.ai_enabled && platformAiEnabled) {
+    if (conversation.ai_enabled && platformAiEnabled && !is_group) {
         const messages = db.prepare('SELECT * FROM messages WHERE conversation_id = ? AND company_id = ? ORDER BY created_at ASC').all(conversation.id, company_id);
 
         // Sonsuz döngü koruması: Son 3 mesajın hepsi outbound (AI) ise yanıt verme
@@ -920,14 +920,10 @@ router.post('/unipile/:companyId', async (req, res) => {
 
         console.log(`🔍 Parsed: senderId=${senderId}, text="${messageText?.substring(0, 50)}", chatId=${chatId}, provider=${provider}`);
 
-        // Grup mesajlarını atla
+        // Grup tespiti
         const isGroup = body.is_group === true || body.chat_type === 'group'
             || (body.attendees && body.attendees.length > 2)
             || body.group_name;
-        if (isGroup) {
-            console.log('⏭ Grup mesajı, atlanıyor');
-            return res.status(200).json({ status: 'ok', note: 'group message' });
-        }
 
         if (!senderId || !messageText) {
             console.warn(`⚠️ Eksik alan: senderId=${senderId}, messageText=${messageText}`);
@@ -983,16 +979,26 @@ router.post('/unipile/:companyId', async (req, res) => {
             }
         }
 
-        console.log(`📨 Unipile webhook (${source}, company:${actualCompanyId}): ${senderName || senderId} → "${messageText.substring(0, 60)}" phone:${senderPhone || 'yok'}`);
+        // Grup mesajları: platform_id olarak chat_id kullan, isim olarak grup adı
+        const platformId = isGroup ? `group_${chatId}` : senderId;
+        const displayName = isGroup
+            ? (body.group_name || senderName || 'Grup')
+            : senderName;
+        const displayText = isGroup
+            ? `[${senderName || 'Üye'}]: ${messageText}`
+            : messageText;
+
+        console.log(`📨 Unipile webhook (${source}${isGroup ? '/grup' : ''}, company:${actualCompanyId}): ${displayName} → "${messageText.substring(0, 60)}" phone:${senderPhone || 'yok'}`);
 
         await processIncomingMessage(db, io, {
             company_id: actualCompanyId,
-            platform_id: senderId,
-            content: messageText,
+            platform_id: platformId,
+            content: displayText,
             source,
-            customer_name: senderName,
+            customer_name: displayName,
             phone: senderPhone,
             unipile_chat_id: chatId,
+            is_group: isGroup,
         });
 
         res.status(200).json({ status: 'ok' });

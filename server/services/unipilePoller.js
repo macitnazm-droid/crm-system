@@ -61,14 +61,10 @@ async function pollIntegration(db, io, integration) {
     const chats = chatsData.items || chatsData.chats || chatsData.object === 'ChatsPage' && chatsData.items || [];
 
     for (const chat of chats) {
-        // Grup mesajlarını atla (sadece 1-1 konuşmalar işlensin)
+        // Grup tespiti
         const isGroup = chat.is_group === true || chat.type === 'group' || chat.group_name
             || (chat.attendees && chat.attendees.length > 2)
             || (chat.name && chat.name.includes(','));
-        if (isGroup) {
-            console.log(`⏭ Grup atlandı: "${chat.name}" (type=${chat.type}, is_group=${chat.is_group}, attendees=${chat.attendees?.length})`);
-            continue;
-        }
 
         // Konuşma since'den eski ise atla
         const chatUpdated = chat.updated_at || chat.last_message_at || chat.timestamp;
@@ -109,7 +105,7 @@ async function pollIntegration(db, io, integration) {
 
             if (!senderId || !text) continue;
 
-            // "Unipile cannot display" mesajlarını atla (grup mesajları, sticker, poll vb.)
+            // "Unipile cannot display" mesajlarını atla (sticker, poll vb.)
             if (text.includes('Unipile cannot display') || text.includes('cannot display this type')) continue;
 
             // AI'ın kendi gönderdiği mesajı geri alıyorsak atla
@@ -123,15 +119,28 @@ async function pollIntegration(db, io, integration) {
 
             if (integration.platform !== source) continue;
 
-            console.log(`📨 Unipile yeni mesaj (${source}): ${senderName || senderId} → "${text.substring(0, 60)}"`);
+            // Grup mesajları: platform_id olarak chat_id kullan, isim olarak grup adı
+            // Böylece tüm grup mesajları tek konuşma altında toplanır
+            const platformId = isGroup ? `group_${chatId}` : senderId;
+            const displayName = isGroup
+                ? (chat.group_name || chat.name || 'Grup')
+                : senderName;
+
+            // Grup mesajında gönderenin adını mesajın başına ekle
+            const displayText = isGroup
+                ? `[${senderName || 'Üye'}]: ${text}`
+                : text;
+
+            console.log(`📨 Unipile yeni mesaj (${source}${isGroup ? '/grup' : ''}): ${displayName} → "${text.substring(0, 60)}"`);
 
             const result = await processIncomingMessage(db, io, {
                 company_id: integration.company_id,
-                platform_id: senderId,
-                content: text,
+                platform_id: platformId,
+                content: displayText,
                 source,
-                customer_name: senderName,
+                customer_name: displayName,
                 unipile_chat_id: chatId,
+                is_group: isGroup,
             });
 
             // chat_id'yi müşteri kaydına sakla (outbound için)
