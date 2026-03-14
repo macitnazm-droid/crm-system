@@ -2,15 +2,46 @@
 
 const GRAPH_API_BASE = 'https://graph.facebook.com/v21.0';
 
+// Facebook Page ID cache — token başına bir kez çekilir
+const pageIdCache = new Map();
+
+/**
+ * System User Token ile Facebook Page ID'yi bul
+ * me/accounts'tan sayfa listesini çeker ve cache'ler
+ */
+async function getFacebookPageId(accessToken) {
+    if (pageIdCache.has(accessToken)) return pageIdCache.get(accessToken);
+    try {
+        const fetch = (await import('node-fetch')).default;
+        const res = await fetch(`${GRAPH_API_BASE}/me/accounts?access_token=${accessToken}&fields=id,name,instagram_business_account`);
+        const data = await res.json();
+        if (data.data && data.data.length > 0) {
+            const pageId = data.data[0].id;
+            pageIdCache.set(accessToken, pageId);
+            console.log(`📄 Facebook Page ID bulundu: ${pageId} (${data.data[0].name})`);
+            return pageId;
+        }
+        // me/accounts boşsa, me'yi dene (Page Token durumu)
+        const meRes = await fetch(`${GRAPH_API_BASE}/me?fields=id,name&access_token=${accessToken}`);
+        const meData = await meRes.json();
+        if (meData.id) {
+            pageIdCache.set(accessToken, meData.id);
+            return meData.id;
+        }
+    } catch (err) {
+        console.error('Facebook Page ID bulunamadı:', err.message);
+    }
+    return null;
+}
+
 /**
  * Instagram DM gönder (Meta Graph API)
- * @param {string} accessToken - Page Access Token
- * @param {string} recipientId - Instagram Scoped User ID (IGSID)
- * @param {string} text - Mesaj içeriği
  */
 async function sendInstagramMessage(accessToken, recipientId, text) {
     const fetch = (await import('node-fetch')).default;
-    const url = `${GRAPH_API_BASE}/me/messages?access_token=${accessToken}`;
+    const pageId = await getFacebookPageId(accessToken);
+    const endpoint = pageId ? `${pageId}/messages` : 'me/messages';
+    const url = `${GRAPH_API_BASE}/${endpoint}?access_token=${accessToken}`;
     const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -28,10 +59,6 @@ async function sendInstagramMessage(accessToken, recipientId, text) {
 
 /**
  * WhatsApp mesaj gönder (Meta Cloud API)
- * @param {string} accessToken - WhatsApp Access Token
- * @param {string} phoneNumberId - WhatsApp Business Phone Number ID
- * @param {string} recipientPhone - Alıcı telefon numarası (uluslararası format, ör: 905551234567)
- * @param {string} text - Mesaj içeriği
  */
 async function sendWhatsAppMessage(accessToken, phoneNumberId, recipientPhone, text) {
     const fetch = (await import('node-fetch')).default;
@@ -55,13 +82,12 @@ async function sendWhatsAppMessage(accessToken, phoneNumberId, recipientPhone, t
 
 /**
  * Messenger mesaj gönder (Meta Graph API)
- * @param {string} accessToken - Page Access Token
- * @param {string} recipientId - Facebook User PSID
- * @param {string} text - Mesaj içeriği
  */
 async function sendMessengerMessage(accessToken, recipientId, text) {
     const fetch = (await import('node-fetch')).default;
-    const url = `${GRAPH_API_BASE}/me/messages?access_token=${accessToken}`;
+    const pageId = await getFacebookPageId(accessToken);
+    const endpoint = pageId ? `${pageId}/messages` : 'me/messages';
+    const url = `${GRAPH_API_BASE}/${endpoint}?access_token=${accessToken}`;
     const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -79,14 +105,18 @@ async function sendMessengerMessage(accessToken, recipientId, text) {
 
 /**
  * Meta Access Token doğrulama
- * @param {string} accessToken
- * @returns {{ valid: boolean, message: string, data?: object }}
  */
 async function verifyToken(accessToken) {
     const fetch = (await import('node-fetch')).default;
-    const res = await fetch(`${GRAPH_API_BASE}/me?fields=id,name`, {
-        headers: { 'Authorization': `Bearer ${accessToken}` }
-    });
+    // Önce me/accounts dene (System User Token)
+    const accountsRes = await fetch(`${GRAPH_API_BASE}/me/accounts?fields=id,name&access_token=${accessToken}`);
+    const accountsData = await accountsRes.json();
+    if (accountsData.data && accountsData.data.length > 0) {
+        const page = accountsData.data[0];
+        return { valid: true, message: `Bağlantı başarılı! Sayfa: ${page.name} (${page.id})`, data: page };
+    }
+    // Fallback: me dene (Page Token)
+    const res = await fetch(`${GRAPH_API_BASE}/me?fields=id,name&access_token=${accessToken}`);
     const data = await res.json();
     if (res.ok && data.id) {
         return { valid: true, message: `Bağlantı başarılı! Sayfa: ${data.name} (${data.id})`, data };
@@ -95,16 +125,13 @@ async function verifyToken(accessToken) {
 }
 
 /**
- * Provider'a göre mesaj gönder (genel helper)
- * @param {object} db - Veritabanı
- * @param {object} options
- */
-/**
  * Instagram/Messenger'a görsel gönder
  */
 async function sendImageMessage(accessToken, recipientId, imageUrl, platform = 'instagram') {
     const fetch = (await import('node-fetch')).default;
-    const url = `${GRAPH_API_BASE}/me/messages?access_token=${accessToken}`;
+    const pageId = await getFacebookPageId(accessToken);
+    const endpoint = pageId ? `${pageId}/messages` : 'me/messages';
+    const url = `${GRAPH_API_BASE}/${endpoint}?access_token=${accessToken}`;
     const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -208,7 +235,6 @@ async function sendOutboundMessage(db, { companyId, source, recipientId, recipie
             return { sent: false, reason: err.message };
         }
     } else if (integration.provider === 'unipile') {
-        // Unipile outbound — mevcut customer.unipile_chat_id gerekli
         try {
             const customer = recipientId
                 ? db.prepare(`SELECT * FROM customers WHERE (instagram_id = ? OR whatsapp_id = ?) AND company_id = ?`).get(recipientId, recipientId, companyId)
