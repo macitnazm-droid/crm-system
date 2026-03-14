@@ -110,17 +110,23 @@ router.post('/send', authMiddleware, async (req, res) => {
         try {
             const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(conversation.customer_id);
             const source = conversation.customer_source || 'instagram';
+            // Görsel URL'sini tam public URL'ye çevir
+            let fullMediaUrl = media_url;
+            if (media_url && media_url.startsWith('/uploads/')) {
+                const baseUrl = process.env.RENDER_EXTERNAL_URL || process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
+                fullMediaUrl = `${baseUrl}${media_url}`;
+            }
             const sendResult = await sendOutboundMessage(db, {
                 companyId,
                 source,
                 recipientId: customer?.instagram_id || customer?.whatsapp_id || customer?.messenger_id,
                 recipientPhone: customer?.phone || customer?.whatsapp_id,
                 text: content || '',
-                mediaUrl: media_url,
+                mediaUrl: fullMediaUrl,
                 mediaType: media_type,
             });
             if (sendResult.sent) {
-                console.log(`📤 Mesaj gönderildi (${sendResult.provider}): "${content.substring(0, 50)}"`);
+                console.log(`📤 Mesaj gönderildi (${sendResult.provider}): "${(content || '📷').substring(0, 50)}"`);
             } else {
                 console.warn(`Mesaj gönderilemedi: ${sendResult.reason}`);
             }
