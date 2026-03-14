@@ -71,30 +71,32 @@ router.post('/instagram', async (req, res) => {
                 const pageId = e.id;
 
                 // page_id ile şirketi bul (provider'a bakma — Meta webhook sadece Meta'dan gelir)
-                const integration = db.prepare(
+                let integration = db.prepare(
                     "SELECT * FROM integration_settings WHERE platform = 'instagram' AND provider = 'meta' AND page_id = ? AND is_active = 1"
                 ).get(pageId);
 
                 if (!integration) {
-                    // Fallback: page_id olmadan Meta provider'lı herhangi bir Instagram entegrasyonu
-                    const fallback = db.prepare(
-                        "SELECT * FROM integration_settings WHERE platform = 'instagram' AND provider = 'meta' AND is_active = 1 LIMIT 1"
-                    ).get();
-                    if (!fallback) {
-                        console.warn(`Instagram webhook: page_id=${pageId} için aktif Meta entegrasyonu bulunamadı`);
+                    // page_id henüz kaydedilmemiş ama sadece 1 entegrasyon varsa onu kullan
+                    const unmatched = db.prepare(
+                        "SELECT * FROM integration_settings WHERE platform = 'instagram' AND provider = 'meta' AND is_active = 1 AND (page_id IS NULL OR page_id = '')"
+                    ).all();
+                    if (unmatched.length === 1) {
+                        // Tek boş page_id'li entegrasyon var — bu ilk bağlantı, page_id'yi kaydet
+                        db.prepare('UPDATE integration_settings SET page_id = ? WHERE id = ?').run(pageId, unmatched[0].id);
+                        console.log(`📝 page_id=${pageId} ilk bağlantıda kaydedildi (integration:${unmatched[0].id})`);
+                        integration = unmatched[0];
+                    } else {
+                        console.warn(`Instagram webhook: page_id=${pageId} için aktif Meta entegrasyonu bulunamadı (${unmatched.length} boş entegrasyon var)`);
                         continue;
                     }
-                    // page_id'yi otomatik kaydet
-                    db.prepare('UPDATE integration_settings SET page_id = ? WHERE id = ?').run(pageId, fallback.id);
-                    console.log(`📝 page_id=${pageId} otomatik kaydedildi (integration:${fallback.id})`);
                 }
 
-                const companyId = (integration || db.prepare("SELECT * FROM integration_settings WHERE platform = 'instagram' AND provider = 'meta' AND is_active = 1 LIMIT 1").get())?.company_id;
+                const companyId = integration.company_id;
                 if (!companyId) continue;
 
                 // Instagram Messaging webhook: entry[].messaging[]
                 const messaging = e.messaging || [];
-                const activeIntegration = integration || db.prepare("SELECT * FROM integration_settings WHERE platform = 'instagram' AND provider = 'meta' AND is_active = 1 LIMIT 1").get();
+                const activeIntegration = integration;
                 for (const event of messaging) {
                     // Echo kontrolü — kendi gönderdiğimiz mesajları atla
                     if (event.message?.is_echo) {
@@ -181,27 +183,27 @@ router.post('/messenger', async (req, res) => {
             for (const e of body.entry) {
                 const pageId = e.id;
 
-                const integration = db.prepare(
+                let integration = db.prepare(
                     "SELECT * FROM integration_settings WHERE platform = 'messenger' AND provider = 'meta' AND page_id = ? AND is_active = 1"
                 ).get(pageId);
 
                 if (!integration) {
-                    const fallback = db.prepare(
-                        "SELECT * FROM integration_settings WHERE platform = 'messenger' AND provider = 'meta' AND is_active = 1 LIMIT 1"
-                    ).get();
-                    if (!fallback) {
+                    const unmatched = db.prepare(
+                        "SELECT * FROM integration_settings WHERE platform = 'messenger' AND provider = 'meta' AND is_active = 1 AND (page_id IS NULL OR page_id = '')"
+                    ).all();
+                    if (unmatched.length === 1 && pageId) {
+                        db.prepare('UPDATE integration_settings SET page_id = ? WHERE id = ?').run(pageId, unmatched[0].id);
+                        integration = unmatched[0];
+                    } else {
                         console.warn(`Messenger webhook: page_id=${pageId} için aktif entegrasyon bulunamadı`);
                         continue;
                     }
-                    if (pageId) {
-                        db.prepare('UPDATE integration_settings SET page_id = ? WHERE id = ?').run(pageId, fallback.id);
-                    }
                 }
 
-                const companyId = (integration || db.prepare("SELECT * FROM integration_settings WHERE platform = 'messenger' AND provider = 'meta' AND is_active = 1 LIMIT 1").get())?.company_id;
+                const companyId = integration.company_id;
                 if (!companyId) continue;
 
-                const activeIntegration = integration || db.prepare("SELECT * FROM integration_settings WHERE platform = 'messenger' AND provider = 'meta' AND is_active = 1 LIMIT 1").get();
+                const activeIntegration = integration;
 
                 const messaging = e.messaging || [];
                 for (const event of messaging) {
@@ -306,22 +308,24 @@ router.post('/whatsapp', async (req, res) => {
                     if (change.field !== 'messages') continue;
 
                     const phoneNumberId = change.value?.metadata?.phone_number_id;
-                    const integration = db.prepare(
+                    let integration = db.prepare(
                         "SELECT * FROM integration_settings WHERE platform = 'whatsapp' AND provider = 'meta' AND phone_number_id = ? AND is_active = 1"
                     ).get(phoneNumberId);
 
                     if (!integration) {
-                        // Fallback
-                        const fallback = db.prepare(
-                            "SELECT * FROM integration_settings WHERE platform = 'whatsapp' AND provider = 'meta' AND is_active = 1 LIMIT 1"
-                        ).get();
-                        if (fallback && phoneNumberId) {
-                            db.prepare('UPDATE integration_settings SET phone_number_id = ? WHERE id = ?').run(phoneNumberId, fallback.id);
+                        const unmatched = db.prepare(
+                            "SELECT * FROM integration_settings WHERE platform = 'whatsapp' AND provider = 'meta' AND is_active = 1 AND (phone_number_id IS NULL OR phone_number_id = '')"
+                        ).all();
+                        if (unmatched.length === 1 && phoneNumberId) {
+                            db.prepare('UPDATE integration_settings SET phone_number_id = ? WHERE id = ?').run(phoneNumberId, unmatched[0].id);
+                            integration = unmatched[0];
+                        } else {
+                            console.warn(`WhatsApp webhook: phone_number_id=${phoneNumberId} için aktif entegrasyon bulunamadı`);
+                            continue;
                         }
-                        if (!fallback) continue;
                     }
 
-                    const companyId = (integration || db.prepare("SELECT * FROM integration_settings WHERE platform = 'whatsapp' AND provider = 'meta' AND is_active = 1 LIMIT 1").get())?.company_id;
+                    const companyId = integration.company_id;
                     if (!companyId) continue;
 
                     // Statuses — okundu bilgisi vb, mesaj değil
