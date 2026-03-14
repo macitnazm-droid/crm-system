@@ -12,6 +12,7 @@ const fs = require('fs');
 const clients = new Map();       // companyId -> socket
 const qrCodes = new Map();       // companyId -> base64 QR image
 const clientStatus = new Map();  // companyId -> { status, phone, name }
+const groupNames = new Map();   // groupJid -> group name cache
 
 function getStatus(companyId) {
     return clientStatus.get(companyId) || { status: 'disconnected', phone: null, name: null };
@@ -194,18 +195,39 @@ async function initClient(db, io, companyId) {
 
                     // Gönderen bilgisi
                     const senderJid = msg.key.remoteJid;
-                    const senderPhone = senderJid?.replace('@s.whatsapp.net', '') || '';
+                    const isGroup = senderJid?.endsWith('@g.us') || false;
+                    const senderPhone = isGroup
+                        ? (msg.key.participant?.replace('@s.whatsapp.net', '') || '')
+                        : (senderJid?.replace('@s.whatsapp.net', '') || '');
                     const senderName = msg.pushName || '';
 
-                    console.log(`📨 Baileys (company: ${companyId}): ${senderName || senderPhone} → "${text.substring(0, 60)}"`);
+                    // Grup: platform_id olarak grup JID, isim olarak grup adı
+                    const platformId = isGroup ? `group_${senderJid}` : senderPhone;
+                    let groupName = null;
+                    if (isGroup) {
+                        if (groupNames.has(senderJid)) {
+                            groupName = groupNames.get(senderJid);
+                        } else {
+                            try {
+                                const meta = await sock.groupMetadata(senderJid);
+                                groupName = meta?.subject || null;
+                                if (groupName) groupNames.set(senderJid, groupName);
+                            } catch (e) { }
+                        }
+                    }
+                    const displayName = isGroup ? (groupName || 'WhatsApp Grup') : (senderName || null);
+                    const displayText = isGroup ? `[${senderName || senderPhone}]: ${text}` : text;
+
+                    console.log(`📨 Baileys (company: ${companyId}${isGroup ? '/grup' : ''}): ${displayName || senderPhone} → "${text.substring(0, 60)}"`);
 
                     await processIncomingMessage(db, io, {
                         company_id: companyId,
-                        platform_id: senderPhone,
-                        content: text,
+                        platform_id: platformId,
+                        content: displayText,
                         source: 'whatsapp',
-                        customer_name: senderName || null,
-                        phone: senderPhone
+                        customer_name: displayName,
+                        phone: isGroup ? null : senderPhone,
+                        is_group: isGroup,
                     });
                 } catch (err) {
                     console.error(`Baileys mesaj işleme hatası (company: ${companyId}):`, err.message);
