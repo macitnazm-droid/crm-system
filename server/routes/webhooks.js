@@ -1023,6 +1023,73 @@ router.post('/unipile/:companyId', async (req, res) => {
     }
 });
 
+// Dışarıdan gönderilen mesajları (telefondan, dış servislerden) panele kaydet
+async function processOutboundMessage(db, io, data) {
+    const { company_id, platform_id, content, source, customer_name, unipile_chat_id, is_group } = data;
+    const now = new Date().toISOString();
+
+    if (!platform_id || !content) return null;
+
+    // Müşteriyi bul
+    let customer;
+    if (source === 'instagram') {
+        customer = db.prepare('SELECT * FROM customers WHERE instagram_id = ? AND company_id = ?').get(platform_id, company_id);
+    } else if (source === 'whatsapp') {
+        customer = db.prepare('SELECT * FROM customers WHERE whatsapp_id = ? AND company_id = ?').get(platform_id, company_id);
+    } else if (source === 'messenger') {
+        customer = db.prepare('SELECT * FROM customers WHERE messenger_id = ? AND company_id = ?').get(platform_id, company_id);
+    }
+
+    // Müşteri yoksa kaydetme (giden mesaj için yeni müşteri oluşturma mantıksız)
+    if (!customer) return null;
+
+    // Duplikasyon: aynı içerik son 60sn içinde zaten kaydedilmiş mi?
+    const sixtySecsAgo = new Date(Date.now() - 60 * 1000).toISOString();
+    const existingMsg = db.prepare(`
+        SELECT id FROM messages
+        WHERE customer_id = ? AND company_id = ? AND content = ? AND direction = 'outbound' AND created_at > ?
+        LIMIT 1
+    `).get(customer.id, company_id, content, sixtySecsAgo);
+
+    if (existingMsg) return null;
+
+    // Konuşmayı bul
+    let conversation = db.prepare(
+        "SELECT * FROM conversations WHERE customer_id = ? AND company_id = ? AND status != 'closed' ORDER BY updated_at DESC LIMIT 1"
+    ).get(customer.id, company_id);
+
+    if (!conversation) {
+        // Giden mesaj için yeni konuşma oluştur
+        const result = db.prepare(`
+            INSERT INTO conversations (company_id, customer_id, status, ai_enabled, last_message_preview, unread_count, created_at, updated_at)
+            VALUES (?, ?, 'open', 1, ?, 0, ?, ?)
+        `).run(company_id, customer.id, content.substring(0, 100), now, now);
+        conversation = db.prepare('SELECT * FROM conversations WHERE id = ?').get(result.lastInsertRowid);
+    } else {
+        db.prepare(`
+            UPDATE conversations SET last_message_preview = ?, updated_at = ? WHERE id = ? AND company_id = ?
+        `).run(content.substring(0, 100), now, conversation.id, company_id);
+        conversation = db.prepare('SELECT * FROM conversations WHERE id = ?').get(conversation.id);
+    }
+
+    // Mesajı outbound olarak kaydet
+    const msgResult = db.prepare(`
+        INSERT INTO messages (company_id, conversation_id, customer_id, content, source, direction, created_at)
+        VALUES (?, ?, ?, ?, ?, 'outbound', ?)
+    `).run(company_id, conversation.id, customer.id, content, source, now);
+
+    const outboundMessage = db.prepare('SELECT * FROM messages WHERE id = ?').get(msgResult.lastInsertRowid);
+
+    console.log(`📤 Dış kaynak giden mesaj kaydedildi (${source}): "${content.substring(0, 60)}"`);
+
+    // Real-time bildirim
+    io.to(`company:${company_id}`).emit('message:new', { message: outboundMessage, conversation_id: conversation.id });
+    io.to(`company:${company_id}`).emit('conversation:updated', { conversation });
+
+    return { customer, conversation, message: outboundMessage };
+}
+
 module.exports = router;
 module.exports.processIncomingMessage = processIncomingMessage;
+module.exports.processOutboundMessage = processOutboundMessage;
 module.exports.detectAppointment = detectAppointment;

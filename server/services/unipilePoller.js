@@ -1,4 +1,4 @@
-const { processIncomingMessage } = require('../routes/webhooks');
+const { processIncomingMessage, processOutboundMessage } = require('../routes/webhooks');
 const { isDuplicate, wasSentByUs } = require('./messageDedup');
 
 // Her entegrasyon için son kontrol zamanını tut
@@ -88,10 +88,9 @@ async function pollIntegration(db, io, integration) {
             const msgTime = msg.timestamp || msg.created_at || msg.date;
             if (msgTime && msgTime < since) continue;
 
-            // Sadece gelen mesajlar (kendi gönderdiğimiz mesajları atla)
-            if (msg.is_sender === true || msg.is_sender === 1 || msg.is_sender === 'true') continue;
-            // direction field varsa kontrol et
-            if (msg.direction === 'outbound' || msg.direction === 'sent') continue;
+            // Giden mi gelen mi tespit et
+            const isOutbound = msg.is_sender === true || msg.is_sender === 1 || msg.is_sender === 'true'
+                || msg.direction === 'outbound' || msg.direction === 'sent';
 
             // Tekrar işleme (webhook ile paylaşımlı dedup)
             const msgId = msg.id;
@@ -103,14 +102,15 @@ async function pollIntegration(db, io, integration) {
                 || chat.attendee_name || chat.name;
             const text = msg.text || msg.body || msg.content;
 
-            if (!senderId || !text) continue;
+            if (!text) continue;
+            // Gelen mesajlarda senderId zorunlu, gidenlerde olmayabilir
+            if (!isOutbound && !senderId) continue;
 
             // "Unipile cannot display" mesajlarını atla (sticker, poll vb.)
             if (text.includes('Unipile cannot display') || text.includes('cannot display this type')) continue;
 
-            // AI'ın kendi gönderdiği mesajı geri alıyorsak atla
+            // Panelden gönderilen mesajları atla (zaten kayıtlı)
             if (wasSentByUs(text)) {
-                console.log(`⏭ Kendi gönderdiğimiz mesaj (poller), atlanıyor: "${text.substring(0, 40)}"`);
                 continue;
             }
 
@@ -131,23 +131,37 @@ async function pollIntegration(db, io, integration) {
                 ? `[${senderName || 'Üye'}]: ${text}`
                 : text;
 
-            console.log(`📨 Unipile yeni mesaj (${source}${isGroup ? '/grup' : ''}): ${displayName} → "${text.substring(0, 60)}"`);
+            if (isOutbound) {
+                // Giden mesaj: telefondan veya dış servisten gönderilmiş
+                await processOutboundMessage(db, io, {
+                    company_id: integration.company_id,
+                    platform_id: isGroup ? `group_${chatId}` : (chat.attendee_id || chat.from_id || senderId),
+                    content: displayText,
+                    source,
+                    customer_name: displayName,
+                    unipile_chat_id: chatId,
+                    is_group: isGroup,
+                });
+            } else {
+                // Gelen mesaj
+                console.log(`📨 Unipile yeni mesaj (${source}${isGroup ? '/grup' : ''}): ${displayName} → "${text.substring(0, 60)}"`);
 
-            const result = await processIncomingMessage(db, io, {
-                company_id: integration.company_id,
-                platform_id: platformId,
-                content: displayText,
-                source,
-                customer_name: displayName,
-                unipile_chat_id: chatId,
-                is_group: isGroup,
-            });
+                const result = await processIncomingMessage(db, io, {
+                    company_id: integration.company_id,
+                    platform_id: platformId,
+                    content: displayText,
+                    source,
+                    customer_name: displayName,
+                    unipile_chat_id: chatId,
+                    is_group: isGroup,
+                });
 
-            // chat_id'yi müşteri kaydına sakla (outbound için)
-            if (result?.customer?.id && chatId) {
-                try {
-                    db.prepare('UPDATE customers SET unipile_chat_id = ? WHERE id = ? AND (unipile_chat_id IS NULL OR unipile_chat_id = ?)').run(chatId, result.customer.id, '');
-                } catch (e) { }
+                // chat_id'yi müşteri kaydına sakla (outbound için)
+                if (result?.customer?.id && chatId) {
+                    try {
+                        db.prepare('UPDATE customers SET unipile_chat_id = ? WHERE id = ? AND (unipile_chat_id IS NULL OR unipile_chat_id = ?)').run(chatId, result.customer.id, '');
+                    } catch (e) { }
+                }
             }
         }
     }

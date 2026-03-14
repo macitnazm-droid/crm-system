@@ -3,7 +3,7 @@
 
 const { makeWASocket, useMultiFileAuthState, DisconnectReason, makeCacheableSignalKeyStore } = require('@whiskeysockets/baileys');
 const QRCode = require('qrcode');
-const { processIncomingMessage } = require('../routes/webhooks');
+const { processIncomingMessage, processOutboundMessage } = require('../routes/webhooks');
 const { isDuplicate, markAsSent, wasSentByUs } = require('./messageDedup');
 const path = require('path');
 const fs = require('fs');
@@ -174,8 +174,7 @@ async function initClient(db, io, companyId) {
 
             for (const msg of messages) {
                 try {
-                    // Kendi gönderdiğimiz mesajları atla
-                    if (msg.key.fromMe) continue;
+                    const isFromMe = msg.key.fromMe === true;
 
                     // Sadece text mesajlar
                     const text = msg.message?.conversation
@@ -187,9 +186,8 @@ async function initClient(db, io, companyId) {
                     const msgId = msg.key.id;
                     if (isDuplicate(msgId)) continue;
 
-                    // Kendi gönderdiğimiz içeriği geri alıyorsak atla
+                    // Panelden gönderilen mesajları atla (zaten kayıtlı)
                     if (wasSentByUs(text)) {
-                        console.log(`⏭ Baileys kendi mesajımız, atlanıyor: "${text.substring(0, 40)}"`);
                         continue;
                     }
 
@@ -218,17 +216,31 @@ async function initClient(db, io, companyId) {
                     const displayName = isGroup ? (groupName || 'WhatsApp Grup') : (senderName || null);
                     const displayText = isGroup ? `[${senderName || senderPhone}]: ${text}` : text;
 
-                    console.log(`📨 Baileys (company: ${companyId}${isGroup ? '/grup' : ''}): ${displayName || senderPhone} → "${text.substring(0, 60)}"`);
+                    if (isFromMe) {
+                        // Telefondan veya dış servisten gönderilen mesaj → panele kaydet
+                        const recipientPhone = senderJid?.replace('@s.whatsapp.net', '').replace('@g.us', '') || '';
+                        await processOutboundMessage(db, io, {
+                            company_id: companyId,
+                            platform_id: isGroup ? `group_${senderJid}` : recipientPhone,
+                            content: displayText,
+                            source: 'whatsapp',
+                            customer_name: displayName,
+                            is_group: isGroup,
+                        });
+                    } else {
+                        // Gelen mesaj
+                        console.log(`📨 Baileys (company: ${companyId}${isGroup ? '/grup' : ''}): ${displayName || senderPhone} → "${text.substring(0, 60)}"`);
 
-                    await processIncomingMessage(db, io, {
-                        company_id: companyId,
-                        platform_id: platformId,
-                        content: displayText,
-                        source: 'whatsapp',
-                        customer_name: displayName,
-                        phone: isGroup ? null : senderPhone,
-                        is_group: isGroup,
-                    });
+                        await processIncomingMessage(db, io, {
+                            company_id: companyId,
+                            platform_id: platformId,
+                            content: displayText,
+                            source: 'whatsapp',
+                            customer_name: displayName,
+                            phone: isGroup ? null : senderPhone,
+                            is_group: isGroup,
+                        });
+                    }
                 } catch (err) {
                     console.error(`Baileys mesaj işleme hatası (company: ${companyId}):`, err.message);
                 }
