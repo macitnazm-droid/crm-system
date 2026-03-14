@@ -1,6 +1,6 @@
 const express = require('express');
 const { aiService } = require('../services/aiService');
-const { isDuplicate, markAsSent } = require('../services/messageDedup');
+const { isDuplicate, markAsSent, wasSentByUs } = require('../services/messageDedup');
 const { sendOutboundMessage } = require('../services/metaService');
 const { sendAppointmentNotification } = require('../services/appointmentNotifyService');
 
@@ -907,12 +907,8 @@ router.post('/unipile/:companyId', async (req, res) => {
             provider = (body.account_type || '').toUpperCase();
             chatId = body.chat_id;
 
-            // Kendi gönderdiğimiz mesajları işleme (sonsuz döngü önleme)
-            // is_sender root seviyede geliyor
-            if (body.is_sender === true) {
-                console.log('⏭ Kendi mesajımız, atlanıyor');
-                return res.status(200).json({ status: 'ok', note: 'own message' });
-            }
+            // is_sender: bizim taraftan gönderilen mesaj (telefondan, dış servislerden)
+            // Panelden gönderilenleri wasSentByUs ile ayırt ediyoruz
         } else if (body.event && body.data) {
             // Format 1
             senderId = body.data.from_id || body.data.sender_id || body.data.attendee_id;
@@ -1003,18 +999,41 @@ router.post('/unipile/:companyId', async (req, res) => {
             ? `[${senderName || 'Üye'}]: ${messageText}`
             : messageText;
 
-        console.log(`📨 Unipile webhook (${source}${isGroup ? '/grup' : ''}, company:${actualCompanyId}): ${displayName} → "${messageText.substring(0, 60)}" phone:${senderPhone || 'yok'}`);
+        if (body.is_sender === true) {
+            // Telefondan veya dış servisten gönderilen mesaj
+            // Panelden gönderilenleri atla (zaten kayıtlı)
+            if (wasSentByUs(messageText)) {
+                return res.status(200).json({ status: 'ok', note: 'own panel message' });
+            }
 
-        await processIncomingMessage(db, io, {
-            company_id: actualCompanyId,
-            platform_id: platformId,
-            content: displayText,
-            source,
-            customer_name: displayName,
-            phone: senderPhone,
-            unipile_chat_id: chatId,
-            is_group: isGroup,
-        });
+            // Müşterinin platform_id'si: attendees'ten al (karşı taraf)
+            const recipientId = body.attendees?.[0]?.attendee_provider_id || body.attendees?.[0]?.attendee_id || senderId;
+
+            console.log(`📤 Unipile webhook giden mesaj (${source}, company:${actualCompanyId}): → "${messageText.substring(0, 60)}"`);
+
+            await processOutboundMessage(db, io, {
+                company_id: actualCompanyId,
+                platform_id: isGroup ? `group_${chatId}` : recipientId,
+                content: displayText,
+                source,
+                customer_name: displayName,
+                is_group: isGroup,
+            });
+        } else {
+            // Gelen mesaj
+            console.log(`📨 Unipile webhook (${source}${isGroup ? '/grup' : ''}, company:${actualCompanyId}): ${displayName} → "${messageText.substring(0, 60)}" phone:${senderPhone || 'yok'}`);
+
+            await processIncomingMessage(db, io, {
+                company_id: actualCompanyId,
+                platform_id: platformId,
+                content: displayText,
+                source,
+                customer_name: displayName,
+                phone: senderPhone,
+                unipile_chat_id: chatId,
+                is_group: isGroup,
+            });
+        }
 
         res.status(200).json({ status: 'ok' });
     } catch (err) {
