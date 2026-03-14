@@ -70,28 +70,12 @@ async function sendAppointmentNotification(db, companyId, appointment, type = 'c
 
     const message = formatAppointmentMessage(msgData, type);
     const phone = appointment.phone;
-    const results = { whatsapp: null, sms: null, fallback: null };
+    const results = { whatsapp: null, sms: null };
 
     console.log(`📢 [NOTIFY] Bildirim başlıyor: type=${type}, phone=${phone}, whatsapp_toggle=${company.appointment_whatsapp_notify}, sms_toggle=${company.appointment_sms_notify}`);
 
-    // Müşterinin conversation source'unu bul (Instagram'dan mı, WhatsApp'tan mı geldi?)
-    let conversationSource = null;
-    if (appointment.conversation_id) {
-        const conv = db.prepare('SELECT source FROM conversations WHERE id = ?').get(appointment.conversation_id);
-        conversationSource = conv?.source;
-    }
-
-    // Aktif entegrasyonları kontrol et
-    const allIntegrations = db.prepare(
-        'SELECT platform, provider, is_active FROM integration_settings WHERE company_id = ? AND is_active = 1'
-    ).all(companyId);
-    const hasWhatsApp = allIntegrations.some(i => i.platform === 'whatsapp');
-    const hasInstagram = allIntegrations.some(i => i.platform === 'instagram');
-
-    console.log(`📢 [NOTIFY] Entegrasyonlar: whatsapp=${hasWhatsApp}, instagram=${hasInstagram}, conversation_source=${conversationSource}`);
-
-    // 1) WhatsApp ile göndermeyi dene (telefon numarası varsa)
-    if (phone && hasWhatsApp) {
+    // 1) WhatsApp bildirimi (toggle açıksa + telefon varsa)
+    if (company.appointment_whatsapp_notify && phone) {
         try {
             const result = await sendOutboundMessage(db, {
                 companyId,
@@ -106,36 +90,11 @@ async function sendAppointmentNotification(db, companyId, appointment, type = 'c
             console.error('📱 [NOTIFY] WhatsApp hatası:', err.message);
             results.whatsapp = { sent: false, reason: err.message };
         }
+    } else {
+        console.log(`📱 [NOTIFY] WhatsApp atlandı: toggle=${company.appointment_whatsapp_notify}, phone=${phone || 'yok'}`);
     }
 
-    // 2) WhatsApp başarısız veya yoksa, konuşmanın orijinal kanalından gönder (Instagram vb.)
-    if ((!results.whatsapp || !results.whatsapp.sent) && conversationSource && conversationSource !== 'whatsapp') {
-        try {
-            // Müşterinin platform ID'sini bul
-            const customer = db.prepare('SELECT instagram_id, whatsapp_id, messenger_id FROM customers WHERE id = ?').get(appointment.customer_id);
-            const recipientId = conversationSource === 'instagram' ? customer?.instagram_id
-                : conversationSource === 'messenger' ? customer?.messenger_id
-                : null;
-
-            if (recipientId) {
-                console.log(`📢 [NOTIFY] Fallback: ${conversationSource} üzerinden gönderiliyor (recipientId: ${recipientId})`);
-                const result = await sendOutboundMessage(db, {
-                    companyId,
-                    source: conversationSource,
-                    recipientId: recipientId,
-                    recipientPhone: phone,
-                    text: message
-                });
-                results.fallback = result;
-                console.log(`📨 [NOTIFY] ${conversationSource} fallback ${result.sent ? '✅ gönderildi' : '❌ gönderilemedi'}: ${appointment.customer_name}`);
-            }
-        } catch (err) {
-            console.error(`📨 [NOTIFY] Fallback hatası (${conversationSource}):`, err.message);
-            results.fallback = { sent: false, reason: err.message };
-        }
-    }
-
-    // 3) SMS bildirim (toggle'a bağlı)
+    // 2) SMS bildirimi (toggle açıksa + telefon + SMS ayarları varsa)
     if (company.appointment_sms_notify && phone && company.sms_usercode && company.sms_password) {
         try {
             const smsResult = await sendSMS(company, phone, message);
@@ -147,7 +106,7 @@ async function sendAppointmentNotification(db, companyId, appointment, type = 'c
         }
     }
 
-    const anySent = results.whatsapp?.sent || results.fallback?.sent || results.sms?.sent;
+    const anySent = results.whatsapp?.sent || results.sms?.sent;
     console.log(`📢 [NOTIFY] Sonuç: ${anySent ? '✅ En az bir kanal başarılı' : '❌ Hiçbir kanaldan gönderilemedi'}`);
 
     return results;
