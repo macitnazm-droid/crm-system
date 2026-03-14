@@ -40,7 +40,7 @@ function formatAppointmentMessage(appointment, type = 'confirmation') {
  * Randevu bildirimi gönder (WhatsApp/SMS/Instagram — mevcut entegrasyon üzerinden)
  * Toggle bağımsız çalışır — her zaman göndermeyi dener
  */
-async function sendAppointmentNotification(db, companyId, appointment, type = 'confirmation') {
+async function sendAppointmentNotification(db, companyId, appointment, type = 'confirmation', io = null) {
     const company = db.prepare(
         'SELECT appointment_whatsapp_notify, appointment_sms_notify, sms_provider, sms_usercode, sms_password, sms_msgheader, appointment_reminder_minutes FROM companies WHERE id = ?'
     ).get(companyId);
@@ -173,6 +173,34 @@ async function sendAppointmentNotification(db, companyId, appointment, type = 'c
 
     const anySent = results.whatsapp?.sent || results.sms?.sent;
     console.log(`📢 [NOTIFY] Sonuç: ${anySent ? '✅ En az bir kanal başarılı' : '❌ Hiçbir kanaldan gönderilemedi'}`);
+
+    // Gönderilen bildirim mesajını DB'ye kaydet (CRM panelinde görünsün)
+    if (anySent && appointment.conversation_id && appointment.customer_id) {
+        try {
+            const now = new Date().toISOString();
+            const msgResult = db.prepare(`
+                INSERT INTO messages (company_id, conversation_id, customer_id, content, source, direction, is_ai_generated, created_at)
+                VALUES (?, ?, ?, ?, 'whatsapp', 'outbound', 0, ?)
+            `).run(companyId, appointment.conversation_id, appointment.customer_id, message, now);
+
+            const savedMsg = db.prepare('SELECT * FROM messages WHERE id = ?').get(msgResult.lastInsertRowid);
+
+            // Konuşmayı güncelle
+            db.prepare('UPDATE conversations SET last_message_preview = ?, updated_at = ? WHERE id = ?')
+                .run(message.substring(0, 100), now, appointment.conversation_id);
+
+            // Real-time bildirim
+            if (io) {
+                io.to(`company:${companyId}`).emit('message:new', {
+                    message: savedMsg,
+                    conversation_id: appointment.conversation_id
+                });
+            }
+            console.log(`📝 [NOTIFY] Bildirim mesajı DB'ye kaydedildi (msg_id: ${msgResult.lastInsertRowid})`);
+        } catch (dbErr) {
+            console.error('📝 [NOTIFY] Bildirim DB kayıt hatası:', dbErr.message);
+        }
+    }
 
     return results;
 }

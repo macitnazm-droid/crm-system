@@ -169,7 +169,7 @@ router.post('/', authMiddleware, adminOnly, (req, res) => {
         io.to(`company:${companyId}`).emit('appointment:new', { appointment });
 
         // Randevu onay bildirimi gönder (WhatsApp/SMS)
-        sendAppointmentNotification(db, companyId, appointment, 'confirmation').catch(err => {
+        sendAppointmentNotification(db, companyId, appointment, 'confirmation', io).catch(err => {
             console.error('Randevu bildirim hatası:', err.message);
         });
 

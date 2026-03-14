@@ -681,7 +681,7 @@ async function processIncomingMessage(db, io, data) {
                     service_id: svc?.id || null,
                     staff_id: stf?.id || null,
                     notes: serviceName.trim()
-                }, 'confirmation').catch(err => {
+                }, 'confirmation', io).catch(err => {
                     console.error('AI randevu bildirim hatası:', err.message);
                 });
 
