@@ -57,19 +57,15 @@ export default function ReportsPage() {
         finally { setScanning(false); }
     };
 
-    if (loading) return <div className="loading-center"><div className="loading-spinner" /></div>;
-
-    // ===== Randevu Takvimi Hesaplamaları =====
+    // ===== Randevu Takvimi Hesaplamaları (hook'lar loading check'ten ÖNCE olmalı) =====
     const today = new Date();
     const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
-    // Takvim günleri oluştur
     const firstDay = new Date(calYear, calMonth, 1);
     const lastDay = new Date(calYear, calMonth + 1, 0);
     const startWeekday = (firstDay.getDay() + 6) % 7; // Pazartesi = 0
     const daysInMonth = lastDay.getDate();
 
-    // Tarihe göre randevu sayıları
     const apptCountByDate = useMemo(() => {
         const counts = {};
         (appointments || []).forEach(a => {
@@ -79,7 +75,6 @@ export default function ReportsPage() {
         return counts;
     }, [appointments]);
 
-    // Period hesaplama
     const apptStats = useMemo(() => {
         const now = new Date();
         let filtered = appointments || [];
@@ -103,7 +98,6 @@ export default function ReportsPage() {
         const completed = filtered.filter(a => a.status === 'completed').length;
         const cancelled = filtered.filter(a => a.status === 'cancelled').length;
 
-        // Kaynak dağılımı
         const sourceCounts = {};
         filtered.forEach(a => {
             const src = a.source || a.customer_source || 'İşletme Tarafından';
@@ -113,6 +107,8 @@ export default function ReportsPage() {
 
         return { total, completed, cancelled, sourceCounts };
     }, [appointments, apptPeriod, todayStr]);
+
+    if (loading) return <div className="loading-center"><div className="loading-spinner" /></div>;
 
     const sourceColors = {
         'İşletme Tarafından': '#a855f7',
