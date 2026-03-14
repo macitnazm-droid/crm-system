@@ -99,7 +99,52 @@ async function verifyToken(accessToken) {
  * @param {object} db - Veritabanı
  * @param {object} options
  */
-async function sendOutboundMessage(db, { companyId, source, recipientId, recipientPhone, text }) {
+/**
+ * Instagram/Messenger'a görsel gönder
+ */
+async function sendImageMessage(accessToken, recipientId, imageUrl, platform = 'instagram') {
+    const fetch = (await import('node-fetch')).default;
+    const url = `${GRAPH_API_BASE}/me/messages`;
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
+        body: JSON.stringify({
+            recipient: { id: recipientId },
+            message: {
+                attachment: {
+                    type: 'image',
+                    payload: { url: imageUrl, is_reusable: true }
+                }
+            }
+        })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(`Meta ${platform} image API hatası: ${res.status} - ${JSON.stringify(data.error || data)}`);
+    return data;
+}
+
+/**
+ * WhatsApp'a görsel gönder
+ */
+async function sendWhatsAppImage(accessToken, phoneNumberId, recipientPhone, imageUrl, caption) {
+    const fetch = (await import('node-fetch')).default;
+    const url = `${GRAPH_API_BASE}/${phoneNumberId}/messages`;
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
+        body: JSON.stringify({
+            messaging_product: 'whatsapp',
+            to: recipientPhone,
+            type: 'image',
+            image: { link: imageUrl, caption: caption || '' }
+        })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(`Meta WA image API hatası: ${res.status} - ${JSON.stringify(data.error || data)}`);
+    return data;
+}
+
+async function sendOutboundMessage(db, { companyId, source, recipientId, recipientPhone, text, mediaUrl, mediaType }) {
     // Birden fazla provider olabilir — öncelik: whatsapp-web > unipile > meta
     const integrations = db.prepare(
         'SELECT * FROM integration_settings WHERE company_id = ? AND platform = ? AND is_active = 1 ORDER BY id DESC'
@@ -131,16 +176,30 @@ async function sendOutboundMessage(db, { companyId, source, recipientId, recipie
     if (integration.provider === 'meta') {
         try {
             if (source === 'instagram' && recipientId) {
-                await sendInstagramMessage(integration.api_key, recipientId, text);
-                console.log(`📤 Meta IG mesaj gönderildi: "${text.substring(0, 50)}"`);
+                if (mediaUrl && mediaType === 'image') {
+                    await sendImageMessage(integration.api_key, recipientId, mediaUrl, 'instagram');
+                    if (text) await sendInstagramMessage(integration.api_key, recipientId, text);
+                } else {
+                    await sendInstagramMessage(integration.api_key, recipientId, text);
+                }
+                console.log(`📤 Meta IG mesaj gönderildi: "${(text || '📷').substring(0, 50)}"`);
                 return { sent: true, provider: 'meta' };
             } else if (source === 'whatsapp' && (recipientPhone || recipientId)) {
-                await sendWhatsAppMessage(integration.api_key, integration.phone_number_id, recipientPhone || recipientId, text);
-                console.log(`📤 Meta WA mesaj gönderildi: "${text.substring(0, 50)}"`);
+                if (mediaUrl && mediaType === 'image') {
+                    await sendWhatsAppImage(integration.api_key, integration.phone_number_id, recipientPhone || recipientId, mediaUrl, text);
+                } else {
+                    await sendWhatsAppMessage(integration.api_key, integration.phone_number_id, recipientPhone || recipientId, text);
+                }
+                console.log(`📤 Meta WA mesaj gönderildi: "${(text || '📷').substring(0, 50)}"`);
                 return { sent: true, provider: 'meta' };
             } else if (source === 'messenger' && recipientId) {
-                await sendMessengerMessage(integration.api_key, recipientId, text);
-                console.log(`📤 Meta Messenger mesaj gönderildi: "${text.substring(0, 50)}"`);
+                if (mediaUrl && mediaType === 'image') {
+                    await sendImageMessage(integration.api_key, recipientId, mediaUrl, 'messenger');
+                    if (text) await sendMessengerMessage(integration.api_key, recipientId, text);
+                } else {
+                    await sendMessengerMessage(integration.api_key, recipientId, text);
+                }
+                console.log(`📤 Meta Messenger mesaj gönderildi: "${(text || '📷').substring(0, 50)}"`);
                 return { sent: true, provider: 'meta' };
             }
             return { sent: false, reason: 'missing_recipient' };

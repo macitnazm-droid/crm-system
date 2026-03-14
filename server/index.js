@@ -137,12 +137,15 @@ app.get('/api/debug/integrations', (req, res) => {
   }
 });
 
+// Uploads dizinini statik olarak sun
+const pathModule = require('path');
+app.use('/uploads', express.static(pathModule.join(__dirname, 'uploads')));
+
 // Production: React build'i sun
 if (process.env.NODE_ENV === 'production') {
-  const path = require('path');
-  app.use(express.static(path.join(__dirname, '../client/dist')));
+  app.use(express.static(pathModule.join(__dirname, '../client/dist')));
   app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, '../client/dist/index.html'));
+    res.sendFile(pathModule.join(__dirname, '../client/dist/index.html'));
   });
 }
 

@@ -12,6 +12,7 @@
     "seed": "cd server && node db/seed.js"
   },
   "dependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.2",
+    "multer": "^2.1.1"
   }
 }

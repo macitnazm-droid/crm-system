@@ -52,7 +52,12 @@ export const conversationsAPI = {
 // Messages
 export const messagesAPI = {
     list: (conversationId, limit) => api.get('/messages', { params: { conversation_id: conversationId, limit } }),
-    send: (conversationId, content) => api.post('/messages/send', { conversation_id: conversationId, content }),
+    send: (conversationId, content, mediaUrl, mediaType) => api.post('/messages/send', { conversation_id: conversationId, content, media_url: mediaUrl, media_type: mediaType }),
+    upload: (file) => {
+        const fd = new FormData();
+        fd.append('file', file);
+        return api.post('/messages/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+    },
 };
 
 // Customers

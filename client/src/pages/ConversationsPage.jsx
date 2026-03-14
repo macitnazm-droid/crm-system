@@ -4,7 +4,7 @@ import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
 import {
     Send, Bot, BotOff, User, Clock, Instagram, MessageCircle,
-    Sparkles, Search, Filter, ChevronDown, Phone
+    Sparkles, Search, Filter, ChevronDown, Phone, Image, X
 } from 'lucide-react';
 
 export default function ConversationsPage() {
@@ -17,6 +17,9 @@ export default function ConversationsPage() {
     const [newMessage, setNewMessage] = useState('');
     const [sending, setSending] = useState(false);
     const [aiLoading, setAiLoading] = useState(false);
+    const [selectedFile, setSelectedFile] = useState(null);
+    const [filePreview, setFilePreview] = useState(null);
+    const fileInputRef = useRef(null);
     const [search, setSearch] = useState('');
     const [filter, setFilter] = useState('all');
     const messagesEndRef = useRef(null);
@@ -80,13 +83,41 @@ export default function ConversationsPage() {
     };
 
     const sendMessage = async () => {
-        if (!newMessage.trim() || !selected || sending) return;
+        if ((!newMessage.trim() && !selectedFile) || !selected || sending) return;
         setSending(true);
         try {
-            await messagesAPI.send(selected, newMessage.trim());
+            let mediaUrl = null;
+            let mediaType = null;
+            if (selectedFile) {
+                const uploadRes = await messagesAPI.upload(selectedFile);
+                mediaUrl = uploadRes.data.url;
+                mediaType = uploadRes.data.media_type;
+            }
+            await messagesAPI.send(selected, newMessage.trim() || null, mediaUrl, mediaType);
             setNewMessage('');
+            setSelectedFile(null);
+            setFilePreview(null);
         } catch (err) { console.error(err); }
         finally { setSending(false); }
+    };
+
+    const handleFileSelect = (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setSelectedFile(file);
+        if (file.type.startsWith('image/')) {
+            const reader = new FileReader();
+            reader.onload = (ev) => setFilePreview(ev.target.result);
+            reader.readAsDataURL(file);
+        } else {
+            setFilePreview(null);
+        }
+    };
+
+    const clearFile = () => {
+        setSelectedFile(null);
+        setFilePreview(null);
+        if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
     const toggleAI = async () => {
@@ -305,7 +336,36 @@ export default function ConversationsPage() {
 
                         {/* Input */}
                         <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border-color)', background: 'var(--bg-secondary)' }}>
+                            {selectedFile && (
+                                <div style={{ marginBottom: 8, padding: 8, background: 'var(--bg-primary)', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    {filePreview ? (
+                                        <img src={filePreview} alt="Önizleme" style={{ width: 60, height: 60, objectFit: 'cover', borderRadius: 6 }} />
+                                    ) : (
+                                        <div style={{ width: 60, height: 60, background: 'var(--bg-secondary)', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12 }}>
+                                            📎 {selectedFile.name.substring(0, 10)}
+                                        </div>
+                                    )}
+                                    <span style={{ flex: 1, fontSize: 12, opacity: 0.7 }}>{selectedFile.name}</span>
+                                    <button onClick={clearFile} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: 4 }}>
+                                        <X size={16} />
+                                    </button>
+                                </div>
+                            )}
                             <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+                                <input
+                                    type="file"
+                                    ref={fileInputRef}
+                                    onChange={handleFileSelect}
+                                    accept="image/*,video/*,audio/*,.pdf,.doc,.docx"
+                                    style={{ display: 'none' }}
+                                />
+                                <button
+                                    onClick={() => fileInputRef.current?.click()}
+                                    style={{ height: 42, width: 42, padding: 0, background: 'var(--bg-primary)', border: '1px solid var(--border-color)', borderRadius: 8, cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                    title="Görsel/dosya ekle"
+                                >
+                                    <Image size={18} />
+                                </button>
                                 <textarea
                                     className="input"
                                     placeholder="Mesajınızı yazın..."
@@ -315,7 +375,7 @@ export default function ConversationsPage() {
                                     rows={1}
                                     style={{ minHeight: 42, maxHeight: 120, resize: 'none', flex: 1 }}
                                 />
-                                <button className="btn btn-primary" onClick={sendMessage} disabled={sending || !newMessage.trim()} style={{ height: 42, width: 42, padding: 0 }}>
+                                <button className="btn btn-primary" onClick={sendMessage} disabled={sending || (!newMessage.trim() && !selectedFile)} style={{ height: 42, width: 42, padding: 0 }}>
                                     {sending ? <div className="loading-spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> : <Send size={18} />}
                                 </button>
                             </div>
