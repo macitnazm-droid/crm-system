@@ -260,15 +260,20 @@ router.post('/messenger', async (req, res) => {
                             }
                         }
 
-                        console.log(`📨 Messenger: ${customerName || senderId} → "${messageText.substring(0, 60)}"`);
-                        await processIncomingMessage(db, io, {
-                            company_id: companyId,
-                            platform_id: senderId,
-                            content: messageText,
-                            source: 'messenger',
-                            customer_name: customerName,
-                            profile_pic: profilePic
-                        });
+                        console.log(`📨 Messenger: ${customerName || senderId} → "${messageText.substring(0, 60)}" (company:${companyId})`);
+                        try {
+                            const result = await processIncomingMessage(db, io, {
+                                company_id: companyId,
+                                platform_id: senderId,
+                                content: messageText,
+                                source: 'messenger',
+                                customer_name: customerName,
+                                profile_pic: profilePic
+                            });
+                            console.log(`✅ Messenger mesaj kaydedildi: customer=${result?.customer?.id}, conv=${result?.conversation?.id}`);
+                        } catch (msgErr) {
+                            console.error(`❌ Messenger processIncomingMessage hatası (company:${companyId}):`, msgErr.message, msgErr.stack?.substring(0, 300));
+                        }
                     }
                 }
             }
