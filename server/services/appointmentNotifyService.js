@@ -77,13 +77,78 @@ async function sendAppointmentNotification(db, companyId, appointment, type = 'c
     // 1) WhatsApp bildirimi (toggle açıksa + telefon varsa)
     if (company.appointment_whatsapp_notify && phone) {
         try {
-            const result = await sendOutboundMessage(db, {
+            // Önce whatsapp platform entegrasyonu dene, yoksa Unipile üzerinden gönder
+            let result = await sendOutboundMessage(db, {
                 companyId,
                 source: 'whatsapp',
                 recipientId: phone,
                 recipientPhone: phone,
                 text: message
             });
+
+            // WhatsApp entegrasyonu bulunamadıysa, Unipile varsa onunla dene
+            if (!result.sent && result.reason === 'no_integration') {
+                console.log(`📱 [NOTIFY] WhatsApp platform entegrasyonu yok, Unipile ile deneniyor...`);
+                const unipileInt = db.prepare(
+                    "SELECT * FROM integration_settings WHERE company_id = ? AND provider = 'unipile' AND is_active = 1 LIMIT 1"
+                ).get(companyId);
+
+                if (unipileInt) {
+                    // Unipile üzerinden WhatsApp mesajı gönder
+                    const fetch = (await import('node-fetch')).default;
+                    const dsn = unipileInt.dsn_url.startsWith('http')
+                        ? unipileInt.dsn_url.replace(/\/$/, '')
+                        : `https://${unipileInt.dsn_url.replace(/\/$/, '')}`;
+
+                    // Telefon numarasını formatla
+                    let formattedPhone = phone.replace(/[\s\-\(\)]/g, '');
+                    if (formattedPhone.startsWith('+')) formattedPhone = formattedPhone.substring(1);
+                    if (!formattedPhone.startsWith('9') && formattedPhone.startsWith('0')) {
+                        formattedPhone = '9' + formattedPhone;
+                    }
+
+                    // Unipile: yeni chat başlat veya mevcut chat'e gönder
+                    // Önce müşterinin mevcut chat_id'si var mı kontrol et
+                    let chatId = null;
+                    if (appointment.customer_id) {
+                        const cust = db.prepare('SELECT unipile_chat_id FROM customers WHERE id = ?').get(appointment.customer_id);
+                        chatId = cust?.unipile_chat_id;
+                    }
+
+                    if (chatId) {
+                        // Mevcut chat'e mesaj gönder
+                        const sendRes = await fetch(`${dsn}/api/v1/chats/${chatId}/messages`, {
+                            method: 'POST',
+                            headers: { 'X-API-KEY': unipileInt.api_key, 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ text: message })
+                        });
+                        if (sendRes.ok) {
+                            result = { sent: true, provider: 'unipile' };
+                        } else {
+                            const errBody = await sendRes.text();
+                            result = { sent: false, reason: `unipile_${sendRes.status}: ${errBody}` };
+                        }
+                    } else {
+                        // Chat ID yok — Unipile ile yeni mesaj göndermeyi dene
+                        const sendRes = await fetch(`${dsn}/api/v1/messages`, {
+                            method: 'POST',
+                            headers: { 'X-API-KEY': unipileInt.api_key, 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                account_id: unipileInt.unipile_account_id,
+                                text: message,
+                                attendees_ids: [formattedPhone + '@s.whatsapp.net']
+                            })
+                        });
+                        if (sendRes.ok) {
+                            result = { sent: true, provider: 'unipile-new' };
+                        } else {
+                            const errBody = await sendRes.text();
+                            result = { sent: false, reason: `unipile_new_${sendRes.status}: ${errBody}` };
+                        }
+                    }
+                }
+            }
+
             results.whatsapp = result;
             console.log(`📱 [NOTIFY] WhatsApp ${result.sent ? '✅ gönderildi' : '❌ gönderilemedi'}: ${appointment.customer_name} (reason: ${result.reason || 'ok'})`);
         } catch (err) {
