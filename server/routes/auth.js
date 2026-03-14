@@ -75,7 +75,7 @@ router.post('/login', (req, res) => {
         }
 
         // Şirket aktif mi kontrol et (superadmin muaf)
-        if (user.company_id && user.role !== 'superadmin') {
+        if (user.company_id && user.role !== 'super_admin') {
             const company = db.prepare('SELECT is_active FROM companies WHERE id = ?').get(user.company_id);
             if (company && !company.is_active) {
                 return res.status(403).json({ error: 'Şirket hesabı dondurulmuş. Lütfen yönetici ile iletişime geçin.' });
