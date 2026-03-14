@@ -37,9 +37,9 @@ async function getFacebookPageId(accessToken) {
 /**
  * Instagram DM gönder (Meta Graph API)
  */
-async function sendInstagramMessage(accessToken, recipientId, text) {
+async function sendInstagramMessage(accessToken, recipientId, text, facebookPageId) {
     const fetch = (await import('node-fetch')).default;
-    const pageId = await getFacebookPageId(accessToken);
+    const pageId = facebookPageId || await getFacebookPageId(accessToken);
     const endpoint = pageId ? `${pageId}/messages` : 'me/messages';
     const url = `${GRAPH_API_BASE}/${endpoint}?access_token=${accessToken}`;
     const res = await fetch(url, {
@@ -83,9 +83,9 @@ async function sendWhatsAppMessage(accessToken, phoneNumberId, recipientPhone, t
 /**
  * Messenger mesaj gönder (Meta Graph API)
  */
-async function sendMessengerMessage(accessToken, recipientId, text) {
+async function sendMessengerMessage(accessToken, recipientId, text, facebookPageId) {
     const fetch = (await import('node-fetch')).default;
-    const pageId = await getFacebookPageId(accessToken);
+    const pageId = facebookPageId || await getFacebookPageId(accessToken);
     const endpoint = pageId ? `${pageId}/messages` : 'me/messages';
     const url = `${GRAPH_API_BASE}/${endpoint}?access_token=${accessToken}`;
     const res = await fetch(url, {
@@ -127,9 +127,9 @@ async function verifyToken(accessToken) {
 /**
  * Instagram/Messenger'a görsel gönder
  */
-async function sendImageMessage(accessToken, recipientId, imageUrl, platform = 'instagram') {
+async function sendImageMessage(accessToken, recipientId, imageUrl, platform = 'instagram', facebookPageId) {
     const fetch = (await import('node-fetch')).default;
-    const pageId = await getFacebookPageId(accessToken);
+    const pageId = facebookPageId || await getFacebookPageId(accessToken);
     const endpoint = pageId ? `${pageId}/messages` : 'me/messages';
     const url = `${GRAPH_API_BASE}/${endpoint}?access_token=${accessToken}`;
     const res = await fetch(url, {
@@ -202,12 +202,13 @@ async function sendOutboundMessage(db, { companyId, source, recipientId, recipie
 
     if (integration.provider === 'meta') {
         try {
+            const fbPageId = integration.facebook_page_id || null;
             if (source === 'instagram' && recipientId) {
                 if (mediaUrl && mediaType === 'image') {
-                    await sendImageMessage(integration.api_key, recipientId, mediaUrl, 'instagram');
-                    if (text) await sendInstagramMessage(integration.api_key, recipientId, text);
+                    await sendImageMessage(integration.api_key, recipientId, mediaUrl, 'instagram', fbPageId);
+                    if (text) await sendInstagramMessage(integration.api_key, recipientId, text, fbPageId);
                 } else {
-                    await sendInstagramMessage(integration.api_key, recipientId, text);
+                    await sendInstagramMessage(integration.api_key, recipientId, text, fbPageId);
                 }
                 console.log(`📤 Meta IG mesaj gönderildi: "${(text || '📷').substring(0, 50)}"`);
                 return { sent: true, provider: 'meta' };
@@ -221,10 +222,10 @@ async function sendOutboundMessage(db, { companyId, source, recipientId, recipie
                 return { sent: true, provider: 'meta' };
             } else if (source === 'messenger' && recipientId) {
                 if (mediaUrl && mediaType === 'image') {
-                    await sendImageMessage(integration.api_key, recipientId, mediaUrl, 'messenger');
-                    if (text) await sendMessengerMessage(integration.api_key, recipientId, text);
+                    await sendImageMessage(integration.api_key, recipientId, mediaUrl, 'messenger', fbPageId);
+                    if (text) await sendMessengerMessage(integration.api_key, recipientId, text, fbPageId);
                 } else {
-                    await sendMessengerMessage(integration.api_key, recipientId, text);
+                    await sendMessengerMessage(integration.api_key, recipientId, text, fbPageId);
                 }
                 console.log(`📤 Meta Messenger mesaj gönderildi: "${(text || '📷').substring(0, 50)}"`);
                 return { sent: true, provider: 'meta' };

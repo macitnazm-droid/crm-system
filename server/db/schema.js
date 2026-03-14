@@ -69,6 +69,9 @@ function initDB() {
     if (intInfo.length > 0 && !intInfo.some(c => c.name === 'unipile_account_id')) {
       db.exec(`ALTER TABLE integration_settings ADD COLUMN unipile_account_id TEXT DEFAULT ''`);
     }
+    if (intInfo.length > 0 && !intInfo.some(c => c.name === 'facebook_page_id')) {
+      db.exec(`ALTER TABLE integration_settings ADD COLUMN facebook_page_id TEXT DEFAULT ''`);
+    }
   } catch (err) { }
 
   // 2.0 Migration: Companies tablosuna user_limit ekle

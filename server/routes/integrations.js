@@ -161,6 +161,13 @@ router.post('/test', authMiddleware, async (req, res) => {
             try {
                 const { verifyToken } = require('../services/metaService');
                 const result = await verifyToken(settings.api_key);
+                // Facebook Page ID'yi otomatik kaydet
+                if (result.valid && result.data?.id) {
+                    try {
+                        db.prepare('UPDATE integration_settings SET facebook_page_id = ? WHERE id = ?').run(result.data.id, settings.id);
+                        console.log(`📄 Facebook Page ID kaydedildi: ${result.data.id} (integration: ${settings.id})`);
+                    } catch (e) { }
+                }
                 return res.json({ success: result.valid, message: result.message });
             } catch (fetchErr) {
                 return res.json({ success: false, message: `Meta API bağlantı hatası: ${fetchErr.message}` });
