@@ -748,16 +748,67 @@ async function processIncomingMessage(db, io, data) {
                 if (!existing) {
                     const appointment = detectAppointment(allMessages, customer.name);
                     if (appointment) {
+                        // appointment_time'dan tarih ve saat parse et
+                        let parsedDate = null;
+                        let parsedTime = null;
+                        let parsedEndTime = null;
+                        const timeExtract = appointment.appointment_time?.match(/(\d{1,2}):(\d{2})/);
+                        if (timeExtract) {
+                            parsedTime = `${timeExtract[1].padStart(2, '0')}:${timeExtract[2]}`;
+                        }
+                        // Tarih parse: "20 mart" veya "2026-03-20" formatları
+                        const dateExtract = appointment.appointment_time?.match(/(\d{1,2})\s*(ocak|şubat|mart|nisan|mayıs|haziran|temmuz|ağustos|eylül|ekim|kasım|aralık)/i);
+                        if (dateExtract) {
+                            const monthMap = { 'ocak': '01', 'şubat': '02', 'mart': '03', 'nisan': '04', 'mayıs': '05', 'haziran': '06', 'temmuz': '07', 'ağustos': '08', 'eylül': '09', 'ekim': '10', 'kasım': '11', 'aralık': '12' };
+                            const year = new Date().getFullYear();
+                            parsedDate = `${year}-${monthMap[dateExtract[2].toLowerCase()]}-${dateExtract[1].padStart(2, '0')}`;
+                        }
+                        // Hizmet süresini bul
+                        let svcId = null;
+                        let stfId = null;
+                        if (appointment.notes) {
+                            const svc = db.prepare('SELECT id, duration FROM services WHERE company_id = ? AND name LIKE ? AND is_active = 1').get(company_id, `%${appointment.notes}%`);
+                            if (svc) {
+                                svcId = svc.id;
+                                if (parsedTime) {
+                                    const [ph, pm] = parsedTime.split(':').map(Number);
+                                    const endMin = ph * 60 + pm + (svc.duration || 60);
+                                    parsedEndTime = `${String(Math.floor(endMin / 60)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}`;
+                                }
+                            }
+                        }
+
                         db.prepare(`
-                            INSERT INTO appointments (company_id, customer_id, conversation_id, customer_name, phone, appointment_time, notes)
-                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                            INSERT INTO appointments (company_id, customer_id, conversation_id, customer_name, phone, appointment_time, appointment_date, start_time, end_time, service_id, staff_id, notes)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         `).run(company_id, customer.id, conversation.id,
                             appointment.customer_name || customer.name,
                             customer.phone || '',
                             appointment.appointment_time,
+                            parsedDate, parsedTime, parsedEndTime,
+                            svcId, stfId,
                             appointment.notes || null);
                         console.log(`📅 Randevu tespit edildi: ${appointment.customer_name} - ${appointment.appointment_time}`);
                         io.to(`company:${company_id}`).emit('appointment:new', { appointment });
+
+                        // Bildirim gönder (WhatsApp/SMS)
+                        if (parsedDate && parsedTime && (customer.phone || phone)) {
+                            console.log(`📢 [DETECT] Randevu bildirimi tetikleniyor: ${appointment.customer_name} → ${parsedDate} ${parsedTime}`);
+                            sendAppointmentNotification(db, company_id, {
+                                customer_name: appointment.customer_name || customer.name,
+                                customer_id: customer.id,
+                                conversation_id: conversation.id,
+                                phone: customer.phone || phone || '',
+                                appointment_date: parsedDate,
+                                start_time: parsedTime,
+                                end_time: parsedEndTime,
+                                service_id: svcId,
+                                staff_id: stfId,
+                                notes: appointment.notes || ''
+                            }, 'confirmation', io).catch(err => {
+                                console.error('detectAppointment bildirim hatası:', err.message);
+                            });
+                        }
                     }
                 }
             } catch (apptErr) {
