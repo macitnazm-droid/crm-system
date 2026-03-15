@@ -372,7 +372,10 @@ router.post('/messenger', verifyMetaSignature('messenger'), async (req, res) => 
                                     const profile = await profileRes.json();
                                     customerName = profile.name || null;
                                     profilePic = profile.profile_pic || null;
-                                    console.log(`👤 Messenger Profil: ${customerName}`);
+                                    console.log(`👤 Messenger Profil: ${customerName} (pic: ${profilePic ? 'var' : 'yok'})`);
+                                } else {
+                                    const errData = await profileRes.json().catch(() => ({}));
+                                    console.warn(`👤 Messenger Profil çekilemedi (${profileRes.status}): ${errData?.error?.message || 'bilinmeyen hata'} [page=${pageId}, sender=${senderId}]`);
                                 }
                             } catch (profileErr) {
                                 console.warn('Messenger profil çekme hatası:', profileErr.message);
