@@ -366,11 +366,11 @@ router.post('/messenger', verifyMetaSignature('messenger'), async (req, res) => 
                             try {
                                 const fetch = (await import('node-fetch')).default;
                                 const profileRes = await fetch(
-                                    `https://graph.facebook.com/v21.0/${senderId}?fields=name,profile_pic&access_token=${activeIntegration.api_key}`
+                                    `https://graph.facebook.com/v21.0/${senderId}?fields=first_name,last_name,profile_pic&access_token=${activeIntegration.api_key}`
                                 );
                                 if (profileRes.ok) {
                                     const profile = await profileRes.json();
-                                    customerName = profile.name || null;
+                                    customerName = [profile.first_name, profile.last_name].filter(Boolean).join(' ') || profile.name || null;
                                     profilePic = profile.profile_pic || null;
                                     console.log(`👤 Messenger Profil: ${customerName} (pic: ${profilePic ? 'var' : 'yok'})`);
                                 } else {
