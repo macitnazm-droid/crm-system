@@ -28,7 +28,15 @@ app.use(cors({
   methods: ['GET', 'POST', 'PATCH', 'DELETE'],
   credentials: true
 }));
-app.use(express.json());
+// Raw body'yi sakla — webhook imza doğrulaması için gerekli
+app.use(express.json({
+  verify: (req, res, buf) => {
+    // Sadece webhook rotaları için raw body'yi sakla
+    if (req.originalUrl && req.originalUrl.startsWith('/api/webhooks')) {
+      req.rawBody = buf;
+    }
+  }
+}));
 
 // Rate Limiting (Geliştirme aşamasında limitler esnetildi)
 const limiter = rateLimit({
@@ -116,8 +124,9 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Debug logs endpoint (geçici)
-app.get('/api/debug/logs', (req, res) => {
+// Debug logs endpoint (auth korumalı)
+const { authMiddleware } = require('./middleware/auth');
+app.get('/api/debug/logs', authMiddleware, (req, res) => {
   const filter = req.query.filter || '';
   const lines = filter
     ? logBuffer.filter(l => l.toLowerCase().includes(filter.toLowerCase()))
@@ -125,8 +134,8 @@ app.get('/api/debug/logs', (req, res) => {
   res.type('text/plain').send(lines.join('\n') || 'No logs yet');
 });
 
-// Debug: integration_settings tablosunu göster
-app.get('/api/debug/integrations', (req, res) => {
+// Debug: integration_settings tablosunu göster (auth korumalı)
+app.get('/api/debug/integrations', authMiddleware, (req, res) => {
   try {
     const all = db.prepare('SELECT id, company_id, platform, provider, is_active, dsn_url, api_key FROM integration_settings').all();
     // API key'leri maskele

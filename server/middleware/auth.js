@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const JWT_SECRET = require('../config/jwtSecret');
 
 function authMiddleware(req, res, next) {
     const authHeader = req.headers.authorization;
@@ -10,7 +11,7 @@ function authMiddleware(req, res, next) {
     const token = authHeader.split(' ')[1];
 
     try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret');
+        const decoded = jwt.verify(token, JWT_SECRET);
         const db = req.app.locals.db;
         const user = db.prepare('SELECT id, company_id, email, name, role, avatar_color FROM users WHERE id = ? AND is_active = 1').get(decoded.userId);
 

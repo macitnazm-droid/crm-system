@@ -454,12 +454,19 @@ function initDB() {
     const superAdmin = db.prepare("SELECT id FROM users WHERE role = 'super_admin'").get();
     if (!superAdmin) {
       const bcrypt = require('bcryptjs');
-      const hash = bcrypt.hashSync('superadmin123', 10);
+      const crypto = require('crypto');
+      const randomPassword = crypto.randomBytes(16).toString('base64url'); // Strong random password
+      const hash = bcrypt.hashSync(randomPassword, 10);
       db.prepare(`
         INSERT INTO users (company_id, email, password_hash, name, role, avatar_color, is_active)
         VALUES (1, 'superadmin@crm.com', ?, 'Süper Admin', 'super_admin', '#8b5cf6', 1)
       `).run(hash);
-      console.log('👑 Super Admin oluşturuldu: superadmin@crm.com / superadmin123');
+      console.log('========================================');
+      console.log('👑 Super Admin oluşturuldu');
+      console.log('   Email: superadmin@crm.com');
+      console.log(`   Password: ${randomPassword}`);
+      console.log('   ⚠️  Bu şifreyi kaydedin! Tekrar gösterilmeyecek.');
+      console.log('========================================');
     }
   } catch (err) {
     console.error('Super admin oluşturma hatası:', err.message);

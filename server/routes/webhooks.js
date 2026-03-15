@@ -1,10 +1,12 @@
 const express = require('express');
 const fs = require('fs');
+const crypto = require('crypto');
 const pathModule = require('path');
 const { aiService } = require('../services/aiService');
 const { isDuplicate, markAsSent, wasSentByUs } = require('../services/messageDedup');
 const { sendOutboundMessage } = require('../services/metaService');
 const { sendAppointmentNotification } = require('../services/appointmentNotifyService');
+const { authMiddleware } = require('../middleware/auth');
 
 /**
  * Harici medya URL'sini indir ve sunucuya kaydet
@@ -98,8 +100,55 @@ function detectAppointment(messages, customerName) {
 
 const router = express.Router();
 
+/**
+ * Meta X-Hub-Signature-256 doğrulama middleware'i
+ * app_secret yapılandırılmamışsa doğrulamayı atlar (mevcut kurulumları bozmaz)
+ */
+function verifyMetaSignature(platform) {
+    return (req, res, next) => {
+        const db = req.app.locals.db;
+
+        // app_secret'ı integration_settings veya env'den al
+        let appSecret = process.env.META_APP_SECRET || null;
+        if (!appSecret) {
+            try {
+                const integration = db.prepare(
+                    "SELECT api_secret FROM integration_settings WHERE platform = ? AND provider = 'meta' AND is_active = 1 LIMIT 1"
+                ).get(platform);
+                if (integration && integration.api_secret) {
+                    appSecret = integration.api_secret;
+                }
+            } catch (e) { /* tablo yoksa atla */ }
+        }
+
+        // app_secret yapılandırılmamışsa doğrulamayı atla
+        if (!appSecret) {
+            return next();
+        }
+
+        const signature = req.headers['x-hub-signature-256'];
+        if (!signature) {
+            console.warn(`⚠️ [${platform}] Webhook imza başlığı eksik`);
+            return res.status(403).json({ error: 'Missing signature' });
+        }
+
+        if (!req.rawBody) {
+            console.warn(`⚠️ [${platform}] Raw body mevcut değil, imza doğrulanamadı`);
+            return res.status(403).json({ error: 'Cannot verify signature' });
+        }
+
+        const expectedSignature = 'sha256=' + crypto.createHmac('sha256', appSecret).update(req.rawBody).digest('hex');
+        if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) {
+            console.warn(`⚠️ [${platform}] Webhook imza doğrulaması başarısız`);
+            return res.status(403).json({ error: 'Invalid signature' });
+        }
+
+        next();
+    };
+}
+
 // POST /api/webhooks/instagram — Meta Graph API Instagram webhook
-router.post('/instagram', async (req, res) => {
+router.post('/instagram', verifyMetaSignature('instagram'), async (req, res) => {
     try {
         const db = req.app.locals.db;
         const io = req.app.locals.io;
@@ -241,7 +290,7 @@ router.post('/instagram', async (req, res) => {
 });
 
 // POST /api/webhooks/messenger — Meta Graph API Messenger webhook
-router.post('/messenger', async (req, res) => {
+router.post('/messenger', verifyMetaSignature('messenger'), async (req, res) => {
     try {
         const db = req.app.locals.db;
         const io = req.app.locals.io;
@@ -390,7 +439,7 @@ router.get('/instagram', (req, res) => {
 });
 
 // POST /api/webhooks/whatsapp — Meta Cloud API WhatsApp webhook
-router.post('/whatsapp', async (req, res) => {
+router.post('/whatsapp', verifyMetaSignature('whatsapp'), async (req, res) => {
     try {
         const db = req.app.locals.db;
         const io = req.app.locals.io;
@@ -497,8 +546,8 @@ router.get('/whatsapp', (req, res) => {
     }
 });
 
-// POST /api/webhooks/simulate — Yerel test simülatörü
-router.post('/simulate', async (req, res) => {
+// POST /api/webhooks/simulate — Yerel test simülatörü (auth korumalı)
+router.post('/simulate', authMiddleware, async (req, res) => {
     try {
         const db = req.app.locals.db;
         const io = req.app.locals.io;

@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { authMiddleware } = require('../middleware/auth');
+const JWT_SECRET = require('../config/jwtSecret');
 
 const router = express.Router();
 
@@ -18,6 +19,28 @@ router.post('/register', (req, res) => {
         const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
         if (existing) {
             return res.status(400).json({ error: 'Bu email zaten kayıtlı' });
+        }
+
+        // Security: Determine role safely
+        // Only authenticated super_admin users can create admin/super_admin accounts
+        let effectiveRole = 'agent'; // Default: always agent for public registration
+        if (role && role !== 'agent') {
+            // Check if there's an authenticated user making this request
+            const authHeader = req.headers.authorization;
+            if (authHeader && authHeader.startsWith('Bearer ')) {
+                try {
+                    const token = authHeader.split(' ')[1];
+                    const decoded = jwt.verify(token, JWT_SECRET);
+                    const requestingUser = db.prepare('SELECT id, role FROM users WHERE id = ? AND is_active = 1').get(decoded.userId);
+                    if (requestingUser && requestingUser.role === 'super_admin') {
+                        effectiveRole = role; // super_admin can assign any role
+                    }
+                    // Non-super_admin users get 'agent' regardless of what they requested
+                } catch (tokenErr) {
+                    // Invalid token — ignore, use default role
+                }
+            }
+            // No auth header — use default 'agent' role
         }
 
         const effectiveCompanyId = company_id || 1;
@@ -42,10 +65,10 @@ router.post('/register', (req, res) => {
 
         const result = db.prepare(
             'INSERT INTO users (company_id, email, password_hash, name, role, avatar_color) VALUES (?, ?, ?, ?, ?, ?)'
-        ).run(company_id || 1, email, passwordHash, name, role || 'agent', avatarColor);
+        ).run(effectiveCompanyId, email, passwordHash, name, effectiveRole, avatarColor);
 
         const user = db.prepare('SELECT id, company_id, email, name, role, avatar_color FROM users WHERE id = ?').get(result.lastInsertRowid);
-        const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET || 'fallback-secret', { expiresIn: '7d' });
+        const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
 
         res.json({ token, user });
     } catch (err) {
@@ -82,7 +105,7 @@ router.post('/login', (req, res) => {
             }
         }
 
-        const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET || 'fallback-secret', { expiresIn: '7d' });
+        const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
 
         res.json({
             token,
