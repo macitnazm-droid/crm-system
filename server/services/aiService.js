@@ -132,17 +132,26 @@ class AIService {
     async categorizeWithClaude(messages, customerInfo) {
         try {
             const messageTexts = messages
-                .filter(m => m.direction === 'inbound')
-                .map(m => m.content)
+                .slice(-20)
+                .map(m => `${m.direction === 'inbound' ? 'Müşteri' : 'İşletme'}: ${m.content}`)
                 .join('\n');
 
             const response = await this.claude.messages.create({
                 model: 'claude-sonnet-4-6',
                 max_tokens: 200,
-                system: 'Müşteri mesajlarını analiz et ve JSON formatında kategorize et. Yanıt sadece JSON olsun.',
+                system: `Sen bir CRM müşteri sınıflandırma uzmanısın. Konuşma bağlamını analiz ederek müşteriyi kategorize et.
+
+KATEGORİ KURALLARI:
+- HOT (70-100 puan): Randevu almak istiyor, müsaitlik soruyor, fiyat sorup devam ediyor, sipariş vermek istiyor, "gelebilir miyim", "ne zaman müsaitsiniz", "rezervasyon", hizmet/ürün almaya kararlı
+- WARM (40-69 puan): Fiyat soruyor, bilgi alıyor, ilgi gösteriyor ama henüz karar vermemiş, "düşüneyim" diyor, referans görseli gönderiyor
+- COLD (0-39 puan): Sadece selamlaşma, tek mesaj atıp gitmiş, "istemiyorum" demiş, hiç etkileşim yok
+
+ÖNEMLİ: Türkçe konuşma bağlamını iyi anla. "Salı müsait misiniz?" = HOT (randevu almak istiyor). "Fiyat ne?" = WARM. Sadece "merhaba" = COLD.
+
+Yanıt sadece JSON olsun, başka bir şey yazma.`,
                 messages: [{
                     role: 'user',
-                    content: `Müşteri mesajları:\n${messageTexts}\n\nBu müşteriyi kategorize et. Yanıt formatı (sadece JSON):\n{"category": "hot|warm|cold", "lead_score": 0-100, "reasoning": "kısa açıklama"}`
+                    content: `Konuşma:\n${messageTexts}\n\nJSON formatında yanıt ver:\n{"category": "hot|warm|cold", "lead_score": 0-100, "reasoning": "kısa açıklama"}`
                 }]
             });
 
@@ -164,16 +173,30 @@ class AIService {
         let score = 30;
         let reasoning = 'Genel ilgi seviyesi';
 
-        // Sıcak sinyaller
-        if (allText.includes('sipariş') || allText.includes('almak') || allText.includes('satın')) {
+        // HOT sinyaller — randevu/satın alma niyeti
+        if (allText.match(/müsait|randevu|rezervasyon|gelebilir|gelmek ist|ne zaman açık|appointment/)) {
+            score += 40;
+            reasoning = 'Randevu/ziyaret niyeti var';
+        }
+        if (allText.includes('sipariş') || allText.includes('almak ist') || allText.includes('satın')) {
             score += 40;
             reasoning = 'Satın alma niyeti var';
         }
-        if (allText.includes('hemen') || allText.includes('acil') || allText.includes('bugün')) {
+        if (allText.match(/hemen|acil|bugün|yarın|bu hafta/)) {
             score += 20;
             reasoning = 'Acil talep';
         }
-        if (allText.includes('fiyat') || allText.includes('kaç')) {
+        if (allText.match(/salı|pazartesi|çarşamba|perşembe|cuma|cumartesi|pazar/)) {
+            score += 25;
+            reasoning = 'Belirli gün soruyor — randevu niyeti';
+        }
+        if (allText.match(/saat kaçta|kaça kadar|kaçta açık|çalışma saat/)) {
+            score += 20;
+            reasoning = 'Çalışma saati soruyor';
+        }
+
+        // WARM sinyaller — ilgi var ama karar yok
+        if (allText.match(/fiyat|ücret|kaç.*(tl|lira)|ne kadar/)) {
             score += 15;
             reasoning = 'Fiyat sorguluyor';
         }
@@ -181,32 +204,91 @@ class AIService {
             score += 25;
             reasoning = 'Toptan satış ilgisi';
         }
-        if (allText.includes('indirim') || allText.includes('kampanya')) {
+        if (allText.match(/indirim|kampanya|promosyon/)) {
             score += 10;
             reasoning = 'Kampanya ilgisi';
         }
+        if (allText.match(/bilgi|detay|nasıl yapılır|hizmet/)) {
+            score += 10;
+            reasoning = 'Bilgi alıyor';
+        }
 
-        // Soğuk sinyaller
-        if (allText.includes('düşüneceğim') || allText.includes('belki')) {
+        // COLD sinyaller
+        if (allText.match(/düşüneceğim|belki|bakarız|sonra/)) {
             score -= 15;
             reasoning = 'Kararsız';
         }
-        if (allText.includes('hayır') || allText.includes('istemiyorum')) {
+        if (allText.match(/hayır|istemiyorum|vazgeçtim|gerek yok/)) {
             score -= 30;
             reasoning = 'İlgi yok';
         }
 
-        // Mesaj sayısı
-        if (inboundMessages.length > 5) score += 10;
-        if (inboundMessages.length > 10) score += 10;
+        // Mesaj sayısı bonusu
+        if (inboundMessages.length > 3) score += 10;
+        if (inboundMessages.length > 7) score += 10;
 
         score = Math.max(0, Math.min(100, score));
 
         let category = 'cold';
-        if (score >= 75) category = 'hot';
+        if (score >= 65) category = 'hot';
         else if (score >= 40) category = 'warm';
 
         return { category, lead_score: score, reasoning };
+    }
+
+    async extractCustomerName(messages) {
+        const inboundTexts = messages
+            .filter(m => m.direction === 'inbound')
+            .slice(-10)
+            .map(m => m.content);
+        const allText = inboundTexts.join(' ');
+
+        // Önce basit regex ile dene (API çağrısı yapmadan)
+        // "Ben Ahmet", "Adım Ayşe", "Merhaba ben Mehmet" gibi kalıplar
+        const namePatterns = [
+            /(?:ben|adım|ismim|benim adım|adım\s+benim)\s+([A-ZÇĞİÖŞÜa-zçğıöşü]{2,}(?:\s+[A-ZÇĞİÖŞÜa-zçğıöşü]{2,})?)/i,
+            /(?:merhaba|selam|iyi günler),?\s*ben\s+([A-ZÇĞİÖŞÜa-zçğıöşü]{2,}(?:\s+[A-ZÇĞİÖŞÜa-zçğıöşü]{2,})?)/i,
+        ];
+
+        for (const pattern of namePatterns) {
+            const match = allText.match(pattern);
+            if (match && match[1]) {
+                const name = match[1].trim();
+                // Tek harfli veya genel kelime değilse kabul et
+                if (name.length >= 2 && !['bir', 'bu', 'de', 'da', 'mi', 'ne'].includes(name.toLowerCase())) {
+                    console.log(`👤 İsim regex ile bulundu: "${name}"`);
+                    return name;
+                }
+            }
+        }
+
+        // Regex bulamadıysa ve Claude varsa AI ile dene
+        if (this.provider === 'claude' && inboundTexts.length >= 2) {
+            try {
+                const response = await this.claude.messages.create({
+                    model: 'claude-sonnet-4-6',
+                    max_tokens: 50,
+                    system: 'Müşteri mesajlarından kişinin gerçek adını çıkar. Sadece JSON yanıt ver. Emin değilsen name: null yaz.',
+                    messages: [{
+                        role: 'user',
+                        content: `Mesajlar:\n${inboundTexts.join('\n')}\n\nJSON: {"name": "isim veya null"}`
+                    }]
+                });
+                const text = response.content[0].text;
+                const jsonMatch = text.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    const parsed = JSON.parse(jsonMatch[0]);
+                    if (parsed.name && parsed.name !== 'null' && parsed.name.length >= 2) {
+                        console.log(`👤 İsim AI ile bulundu: "${parsed.name}"`);
+                        return parsed.name;
+                    }
+                }
+            } catch (err) {
+                console.warn('AI isim çıkarma hatası:', err.message);
+            }
+        }
+
+        return null;
     }
 
     async extractAppointment(messages, customerInfo) {

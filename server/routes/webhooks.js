@@ -949,12 +949,26 @@ async function processIncomingMessage(db, io, data) {
             console.error('AI outbound hatası:', outboundErr.message);
         }
 
-        // 5. Müşteriyi kategorize et
+        // 5. Müşteriyi kategorize et + isim çıkar
         const allMessages = db.prepare('SELECT * FROM messages WHERE customer_id = ? AND company_id = ? ORDER BY created_at ASC').all(customer.id, company_id);
         const categorization = await aiService.categorizeCustomer(allMessages, customer);
 
         db.prepare('UPDATE customers SET category = ?, lead_score = ?, updated_at = ? WHERE id = ? AND company_id = ?')
             .run(categorization.category, categorization.lead_score, new Date().toISOString(), customer.id, company_id);
+
+        // İsim "Müşteri xxx" ise mesajlardan gerçek ismi çıkarmaya çalış
+        if (customer.name.startsWith('Müşteri ')) {
+            try {
+                const extractedName = await aiService.extractCustomerName(allMessages);
+                if (extractedName) {
+                    db.prepare('UPDATE customers SET name = ?, updated_at = ? WHERE id = ? AND company_id = ?')
+                        .run(extractedName, new Date().toISOString(), customer.id, company_id);
+                    console.log(`👤 Müşteri ismi güncellendi: "${customer.name}" → "${extractedName}"`);
+                }
+            } catch (nameErr) {
+                console.warn('İsim çıkarma hatası:', nameErr.message);
+            }
+        }
 
         customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(customer.id);
         io.to(`company:${company_id}`).emit('customer:categorized', { customer });
