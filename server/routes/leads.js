@@ -242,7 +242,7 @@ router.get('/settings/automation', authMiddleware, (req, res) => {
     try {
         const db = req.app.locals.db;
         const companyId = req.user.company_id;
-        const company = db.prepare('SELECT lead_auto_message, lead_message_template, lead_message_delay FROM companies WHERE id = ?').get(companyId);
+        const company = db.prepare('SELECT feature_lead, lead_auto_message, lead_message_template, lead_message_delay FROM companies WHERE id = ?').get(companyId);
         res.json(company || {});
     } catch (err) {
         res.status(500).json({ error: 'Ayarlar yüklenirken hata oluştu' });
@@ -252,13 +252,17 @@ router.get('/settings/automation', authMiddleware, (req, res) => {
 // PATCH /api/leads/settings/automation — Lead otomasyon ayarları güncelle
 router.patch('/settings/automation', authMiddleware, (req, res) => {
     try {
+        if (req.user.role !== 'admin' && req.user.role !== 'super_admin') {
+            return res.status(403).json({ error: 'Bu işlem için yönetici yetkisi gerekli' });
+        }
         const db = req.app.locals.db;
         const companyId = req.user.company_id;
-        const { lead_auto_message, lead_message_template, lead_message_delay } = req.body;
+        const { feature_lead, lead_auto_message, lead_message_template, lead_message_delay } = req.body;
 
         const updates = ['updated_at = ?'];
         const params = [new Date().toISOString()];
 
+        if (feature_lead !== undefined) { updates.push('feature_lead = ?'); params.push(feature_lead ? 1 : 0); }
         if (lead_auto_message !== undefined) { updates.push('lead_auto_message = ?'); params.push(lead_auto_message ? 1 : 0); }
         if (lead_message_template) { updates.push('lead_message_template = ?'); params.push(lead_message_template); }
         if (lead_message_delay !== undefined) { updates.push('lead_message_delay = ?'); params.push(lead_message_delay); }

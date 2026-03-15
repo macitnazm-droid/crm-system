@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
-import { aiAPI, integrationsAPI, appointmentsAPI } from '../lib/api';
+import { aiAPI, integrationsAPI, appointmentsAPI, leadsAPI } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import {
     Settings, Bot, Save, Plus, Eye, EyeOff, AlertCircle,
     Instagram, MessageCircle, Link2, CheckCircle, X, Loader,
-    Webhook, Globe, Key, Phone, Shield, Trash2, QrCode, Wifi, WifiOff, Smartphone, Bell, MessageSquare
+    Webhook, Globe, Key, Phone, Shield, Trash2, QrCode, Wifi, WifiOff, Smartphone, Bell, MessageSquare, Target
 } from 'lucide-react';
 
 export default function SettingsPage() {
@@ -46,6 +46,14 @@ export default function SettingsPage() {
         appointment_reminder_minutes: 60
     });
 
+    // Lead otomasyon ayarları
+    const [leadSettings, setLeadSettings] = useState({
+        feature_lead: 0,
+        lead_auto_message: 0,
+        lead_message_template: '',
+        lead_message_delay: 0
+    });
+
     useEffect(() => {
         loadData();
         // WhatsApp Web durumunu yükle
@@ -54,6 +62,8 @@ export default function SettingsPage() {
         aiAPI.getPlatformSettings().then(res => setPlatformAI(res.data)).catch(() => {});
         // Bildirim ayarlarını yükle
         appointmentsAPI.getNotificationSettings().then(res => setNotifySettings(res.data)).catch(() => {});
+        // Lead otomasyon ayarlarını yükle
+        leadsAPI.getSettings().then(res => setLeadSettings(res.data)).catch(() => {});
     }, []);
 
     const loadData = async () => {
@@ -164,6 +174,7 @@ export default function SettingsPage() {
                 {[
                     { key: 'integrations', label: 'Entegrasyonlar', icon: Link2 },
                     { key: 'ai', label: 'AI Promptları', icon: Bot },
+                    { key: 'leads', label: 'Lead Ayarları', icon: Target },
                     { key: 'notifications', label: 'Bildirimler', icon: Bell },
                 ].map(t => (
                     <button key={t.key}
@@ -948,6 +959,153 @@ export default function SettingsPage() {
                     )}
                 </div>
             </>)}
+
+            {/* ========= LEAD AYARLARI TAB ========= */}
+            {tab === 'leads' && (
+                <div className="glass-card" style={{ padding: '20px 24px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                        <Target size={18} style={{ color: '#06b6d4' }} />
+                        <h3 style={{ fontSize: 15, fontWeight: 600 }}>Lead Otomasyon Ayarları</h3>
+                    </div>
+                    <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 18 }}>
+                        Lead modülünü aktif/pasif yapın ve otomasyon ayarlarını düzenleyin.
+                    </p>
+
+                    {/* Lead özelliği aktif/pasif toggle */}
+                    <div style={{
+                        padding: '14px 18px', borderRadius: 'var(--radius-md)',
+                        border: `1px solid ${leadSettings.feature_lead ? 'rgba(6,182,212,0.3)' : 'var(--border-color)'}`,
+                        background: leadSettings.feature_lead ? 'rgba(6,182,212,0.06)' : 'var(--bg-secondary)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+                        marginBottom: 16
+                    }}>
+                        <div>
+                            <span style={{ fontSize: 13, fontWeight: 600, color: leadSettings.feature_lead ? '#06b6d4' : 'var(--text-secondary)' }}>
+                                🎯 Lead Yönetimi {leadSettings.feature_lead ? '(Aktif)' : '(Pasif)'}
+                            </span>
+                            <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                                Lead modülü, sidebar menüsü ve tüm lead işlevleri
+                            </div>
+                        </div>
+                        <label className="toggle-switch">
+                            <input type="checkbox" checked={!!leadSettings.feature_lead}
+                                disabled={user?.role !== 'admin' && user?.role !== 'super_admin'}
+                                onChange={async (e) => {
+                                    const val = e.target.checked ? 1 : 0;
+                                    setLeadSettings(prev => ({ ...prev, feature_lead: val }));
+                                    try {
+                                        await leadsAPI.updateSettings({ feature_lead: val });
+                                        setTestResult({ success: true, message: `Lead yönetimi ${val ? 'aktif edildi' : 'pasif edildi'}` });
+                                    } catch (err) {
+                                        setTestResult({ success: false, message: 'Kaydedilemedi' });
+                                    }
+                                }} />
+                            <span className="toggle-slider"></span>
+                        </label>
+                    </div>
+
+                    {/* feature_lead açıkken otomasyon ayarları */}
+                    {!!leadSettings.feature_lead && (<>
+                    {/* Otomatik mesaj toggle */}
+                    <div style={{
+                        padding: '14px 18px', borderRadius: 'var(--radius-md)',
+                        border: '1px solid var(--border-color)', background: 'var(--bg-secondary)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+                        marginBottom: 20
+                    }}>
+                        <div>
+                            <span style={{ fontSize: 13, fontWeight: 500, color: '#06b6d4' }}>📲 Otomatik WhatsApp Mesajı</span>
+                            <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                                Yeni lead geldiğinde otomatik olarak WhatsApp mesajı gönderilir
+                            </div>
+                        </div>
+                        <label className="toggle-switch">
+                            <input type="checkbox" checked={!!leadSettings.lead_auto_message}
+                                disabled={user?.role !== 'admin' && user?.role !== 'super_admin'}
+                                onChange={async (e) => {
+                                    const val = e.target.checked ? 1 : 0;
+                                    setLeadSettings(prev => ({ ...prev, lead_auto_message: val }));
+                                    try {
+                                        await leadsAPI.updateSettings({ lead_auto_message: val });
+                                        setTestResult({ success: true, message: `Otomatik mesaj ${val ? 'açıldı' : 'kapatıldı'}` });
+                                    } catch (err) {
+                                        setTestResult({ success: false, message: 'Kaydedilemedi' });
+                                    }
+                                }} />
+                            <span className="toggle-slider"></span>
+                        </label>
+                    </div>
+
+                    {/* Mesaj şablonu ve gecikme — auto_message açıkken göster */}
+                    {!!leadSettings.lead_auto_message && (
+                        <div style={{ padding: '16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', background: 'var(--bg-tertiary)' }}>
+                            <div style={{ marginBottom: 16 }}>
+                                <label style={{ fontSize: 13, fontWeight: 500, display: 'block', marginBottom: 6 }}>Mesaj Şablonu</label>
+                                <textarea className="form-input" rows={4}
+                                    placeholder="Merhaba {isim}, bizimle iletişime geçtiğiniz için teşekkür ederiz!"
+                                    value={leadSettings.lead_message_template}
+                                    disabled={user?.role !== 'admin' && user?.role !== 'super_admin'}
+                                    onChange={(e) => setLeadSettings(prev => ({ ...prev, lead_message_template: e.target.value }))}
+                                    style={{ resize: 'vertical', width: '100%' }}
+                                />
+                                <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                                    Kullanılabilir değişkenler: <code style={{ background: 'var(--bg-secondary)', padding: '1px 4px', borderRadius: 3 }}>{'{isim}'}</code> — Lead'in adı
+                                </p>
+                            </div>
+
+                            <div style={{ marginBottom: 16 }}>
+                                <label style={{ fontSize: 13, fontWeight: 500, display: 'block', marginBottom: 6 }}>Gecikme Süresi (saniye)</label>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <input className="form-input" type="number" min={0} max={3600}
+                                        value={leadSettings.lead_message_delay}
+                                        disabled={user?.role !== 'admin' && user?.role !== 'super_admin'}
+                                        onChange={(e) => setLeadSettings(prev => ({ ...prev, lead_message_delay: parseInt(e.target.value) || 0 }))}
+                                        style={{ width: 120 }}
+                                    />
+                                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                                        {leadSettings.lead_message_delay === 0 ? 'Hemen gönder' :
+                                            leadSettings.lead_message_delay >= 60 ? `${Math.floor(leadSettings.lead_message_delay / 60)} dk ${leadSettings.lead_message_delay % 60}s sonra` :
+                                                `${leadSettings.lead_message_delay} saniye sonra`}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <button className="btn btn-sm btn-primary"
+                                disabled={(user?.role !== 'admin' && user?.role !== 'super_admin') || saving}
+                                onClick={async () => {
+                                    setSaving(true);
+                                    try {
+                                        await leadsAPI.updateSettings({
+                                            lead_message_template: leadSettings.lead_message_template,
+                                            lead_message_delay: leadSettings.lead_message_delay
+                                        });
+                                        setTestResult({ success: true, message: 'Lead otomasyon ayarları kaydedildi' });
+                                    } catch (err) {
+                                        setTestResult({ success: false, message: 'Kaydetme hatası' });
+                                    } finally { setSaving(false); }
+                                }}
+                            >
+                                <Save size={14} /> Kaydet
+                            </button>
+                        </div>
+                    )}
+
+                    </>)}
+
+                    {/* Leadgen Webhook URL bilgisi — her zaman göster */}
+                    <div style={{ marginTop: 20, padding: '14px 16px', borderRadius: 'var(--radius-md)', background: 'rgba(6,182,212,0.06)', border: '1px solid rgba(6,182,212,0.2)' }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-primary)' }}>Meta Lead Ads Webhook</div>
+                        <input className="input" readOnly
+                            value={`${serverUrl}/api/webhooks/leadgen`}
+                            style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', cursor: 'text', marginBottom: 6 }}
+                            onClick={e => { e.target.select(); navigator.clipboard?.writeText(e.target.value); }} />
+                        <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                            Bu URL'yi Meta Developer Dashboard → Webhooks → Page → leadgen alanına yapıştırın.
+                            Entegrasyonlar sekmesinde kayıtlı Page ID ile eşleşen leadler otomatik olarak sisteme düşer.
+                        </p>
+                    </div>
+                </div>
+            )}
 
             {/* ========= BİLDİRİMLER TAB ========= */}
             {tab === 'notifications' && (
