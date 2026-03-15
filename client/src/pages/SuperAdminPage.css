@@ -719,3 +719,72 @@
     padding-top: 1.5rem;
     border-top: 1px solid rgba(255,255,255,0.05);
 }
+
+/* Feature Toggles */
+.sa-features-section {
+    padding: 1.5rem;
+    border-top: 1px solid rgba(255,255,255,0.05);
+}
+
+.sa-features-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: white;
+    margin-bottom: 1rem;
+}
+
+.sa-features-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+}
+
+.sa-feature-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.875rem 1rem;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 0.75rem;
+}
+
+.sa-feature-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.sa-feature-label {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: rgba(255,255,255,0.85);
+}
+
+.sa-feature-desc {
+    font-size: 0.7rem;
+    color: rgba(255,255,255,0.35);
+}
+
+.sa-feature-toggle {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: rgba(255,255,255,0.25);
+    transition: color 0.15s;
+    padding: 0;
+    display: flex;
+    align-items: center;
+}
+
+.sa-feature-toggle.active {
+    color: #34d399;
+}
+
+.sa-feature-toggle:hover {
+    color: rgba(255,255,255,0.5);
+}
+
+.sa-feature-toggle.active:hover {
+    color: #6ee7b7;
+}

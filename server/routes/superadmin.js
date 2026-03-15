@@ -172,6 +172,40 @@ router.delete('/companies/:id/users/:userId', authMiddleware, superAdminOnly, (r
   }
 });
 
+// POST /api/superadmin/companies/:id/users/:userId/reset-password
+router.post('/companies/:id/users/:userId/reset-password', authMiddleware, superAdminOnly, (req, res) => {
+  try {
+    const db = req.app.locals.db;
+    const { new_password } = req.body;
+    if (!new_password || new_password.length < 6) {
+      return res.status(400).json({ error: 'Şifre en az 6 karakter olmalı' });
+    }
+    const bcrypt = require('bcryptjs');
+    const hash = bcrypt.hashSync(new_password, 10);
+    db.prepare('UPDATE users SET password_hash = ? WHERE id = ? AND company_id = ?').run(hash, req.params.userId, req.params.id);
+    res.json({ success: true, message: 'Şifre başarıyla sıfırlandı' });
+  } catch (err) {
+    res.status(500).json({ error: 'Şifre sıfırlanamadı' });
+  }
+});
+
+// PATCH /api/superadmin/companies/:id/features — Şirket özellik toggle'ları
+router.patch('/companies/:id/features', authMiddleware, superAdminOnly, (req, res) => {
+  try {
+    const db = req.app.locals.db;
+    const { feature, enabled } = req.body;
+    const allowed = ['ai_instagram', 'ai_whatsapp', 'ai_messenger', 'appointment_whatsapp_notify', 'appointment_sms_notify', 'lead_auto_message'];
+    if (!allowed.includes(feature)) {
+      return res.status(400).json({ error: 'Geçersiz özellik' });
+    }
+    db.prepare(`UPDATE companies SET ${feature} = ? WHERE id = ?`).run(enabled ? 1 : 0, req.params.id);
+    const company = db.prepare('SELECT * FROM companies WHERE id = ?').get(req.params.id);
+    res.json({ success: true, company });
+  } catch (err) {
+    res.status(500).json({ error: 'Özellik güncellenemedi' });
+  }
+});
+
 // GET /api/superadmin/stats
 router.get('/stats', authMiddleware, superAdminOnly, (req, res) => {
   try {

@@ -155,6 +155,8 @@ export const superAdminAPI = {
     getCompanyUsers: (id) => api.get(`/superadmin/companies/${id}/users`),
     addCompanyUser: (id, data) => api.post(`/superadmin/companies/${id}/users`, data),
     removeCompanyUser: (id, userId) => api.delete(`/superadmin/companies/${id}/users/${userId}`),
+    resetUserPassword: (companyId, userId, newPassword) => api.post(`/superadmin/companies/${companyId}/users/${userId}/reset-password`, { new_password: newPassword }),
+    updateFeature: (companyId, feature, enabled) => api.patch(`/superadmin/companies/${companyId}/features`, { feature, enabled }),
 };
 
 export default api;

@@ -4,7 +4,7 @@ import {
     Building2, Users, MessageSquare,
     Plus, Search, CheckCircle2, XCircle,
     Star, Zap, Crown,
-    Activity, ChevronRight, UserPlus, Trash2
+    Activity, ChevronRight, UserPlus, Trash2, Key, ToggleLeft, ToggleRight
 } from 'lucide-react';
 import './SuperAdminPage.css';
 
@@ -154,6 +154,27 @@ export default function SuperAdminPage() {
             fetchData();
         } catch (err) {
             alert('İşlem başarısız');
+        }
+    };
+
+    const handleResetPassword = async (userId) => {
+        const newPassword = prompt('Yeni şifreyi girin (en az 6 karakter):');
+        if (!newPassword) return;
+        if (newPassword.length < 6) { alert('Şifre en az 6 karakter olmalı'); return; }
+        try {
+            await superAdminAPI.resetUserPassword(selectedCompanyId, userId, newPassword);
+            alert('Şifre başarıyla sıfırlandı');
+        } catch (err) {
+            alert('Şifre sıfırlanamadı: ' + (err.response?.data?.error || err.message));
+        }
+    };
+
+    const handleToggleFeature = async (companyId, feature, currentValue) => {
+        try {
+            await superAdminAPI.updateFeature(companyId, feature, !currentValue);
+            fetchData();
+        } catch (err) {
+            alert('Özellik güncellenemedi');
         }
     };
 
@@ -426,15 +447,26 @@ export default function SuperAdminPage() {
                                                         {new Date(user.created_at).toLocaleDateString('tr-TR')}
                                                     </td>
                                                     <td>
-                                                        {user.is_active && (
-                                                            <button
-                                                                className="sa-remove-btn"
-                                                                onClick={() => handleRemoveUser(user.id)}
-                                                                title="Deaktif et"
-                                                            >
-                                                                <Trash2 size={14} />
-                                                            </button>
-                                                        )}
+                                                        <div className="sa-actions">
+                                                            {user.is_active && (
+                                                                <>
+                                                                    <button
+                                                                        className="sa-action-btn edit"
+                                                                        onClick={() => handleResetPassword(user.id)}
+                                                                        title="Şifre Sıfırla"
+                                                                    >
+                                                                        <Key size={14} />
+                                                                    </button>
+                                                                    <button
+                                                                        className="sa-remove-btn"
+                                                                        onClick={() => handleRemoveUser(user.id)}
+                                                                        title="Deaktif et"
+                                                                    >
+                                                                        <Trash2 size={14} />
+                                                                    </button>
+                                                                </>
+                                                            )}
+                                                        </div>
                                                     </td>
                                                 </tr>
                                             ))}
@@ -444,6 +476,37 @@ export default function SuperAdminPage() {
                                 {companyUsers.length === 0 && !usersLoading && (
                                     <div className="sa-empty">Bu şirkete ait kullanıcı yok</div>
                                 )}
+
+                                {/* Feature Toggles */}
+                                <div className="sa-features-section">
+                                    <h4 className="sa-features-title">Özellik Yönetimi</h4>
+                                    <div className="sa-features-grid">
+                                        {[
+                                            { key: 'ai_instagram', label: 'AI - Instagram', desc: 'Instagram mesajlarında yapay zeka yanıtı' },
+                                            { key: 'ai_whatsapp', label: 'AI - WhatsApp', desc: 'WhatsApp mesajlarında yapay zeka yanıtı' },
+                                            { key: 'ai_messenger', label: 'AI - Messenger', desc: 'Messenger mesajlarında yapay zeka yanıtı' },
+                                            { key: 'appointment_whatsapp_notify', label: 'Randevu WhatsApp Bildirim', desc: 'Randevu oluşturulduğunda WhatsApp bildirimi' },
+                                            { key: 'appointment_sms_notify', label: 'Randevu SMS Bildirim', desc: 'Randevu oluşturulduğunda SMS bildirimi' },
+                                            { key: 'lead_auto_message', label: 'Lead Otomatik Mesaj', desc: 'Yeni leadlere otomatik mesaj gönderimi' },
+                                        ].map(feat => (
+                                            <div key={feat.key} className="sa-feature-item">
+                                                <div className="sa-feature-info">
+                                                    <span className="sa-feature-label">{feat.label}</span>
+                                                    <span className="sa-feature-desc">{feat.desc}</span>
+                                                </div>
+                                                <button
+                                                    className={`sa-feature-toggle ${selectedCompany[feat.key] ? 'active' : ''}`}
+                                                    onClick={() => handleToggleFeature(selectedCompany.id, feat.key, selectedCompany[feat.key])}
+                                                >
+                                                    {selectedCompany[feat.key]
+                                                        ? <ToggleRight size={28} />
+                                                        : <ToggleLeft size={28} />
+                                                    }
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
                             </>
                         )}
                     </div>
