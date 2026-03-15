@@ -213,11 +213,11 @@ router.patch('/platform-settings', authMiddleware, adminOnly, (req, res) => {
             db.prepare(`UPDATE companies SET ${updates.join(', ')} WHERE id = ?`).run(...params);
         }
 
-        const company = db.prepare('SELECT ai_instagram, ai_whatsapp, ai_messenger FROM companies WHERE id = ?').get(companyId);
+        const updated = db.prepare('SELECT ai_instagram, ai_whatsapp, ai_messenger FROM companies WHERE id = ?').get(companyId);
         res.json({
-            ai_instagram: company?.ai_instagram ?? 1,
-            ai_whatsapp: company?.ai_whatsapp ?? 1,
-            ai_messenger: company?.ai_messenger ?? 1,
+            ai_instagram: updated?.ai_instagram ?? 1,
+            ai_whatsapp: updated?.ai_whatsapp ?? 1,
+            ai_messenger: updated?.ai_messenger ?? 1,
         });
     } catch (err) {
         console.error('Platform AI settings error:', err);
