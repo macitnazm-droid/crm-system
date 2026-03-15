@@ -5,10 +5,20 @@ const { sendAppointmentNotification } = require('../services/appointmentNotifySe
 
 const router = express.Router();
 
+// Randevu modülü aktif mi kontrolü
+function appointmentEnabled(req, res, next) {
+    const db = req.app.locals.db;
+    const company = db.prepare('SELECT appointment_enabled FROM companies WHERE id = ?').get(req.user.company_id);
+    if (!company || !company.appointment_enabled) {
+        return res.status(403).json({ error: 'Randevu modülü bu şirket için aktif değil' });
+    }
+    next();
+}
+
 // ==================== RANDEVULAR ====================
 
 // GET /api/appointments — Randevuları listele (tarih filtreli)
-router.get('/', authMiddleware, (req, res) => {
+router.get('/', authMiddleware, appointmentEnabled, (req, res) => {
     try {
         const db = req.app.locals.db;
         const companyId = req.user.company_id;
@@ -108,7 +118,7 @@ router.patch('/notification-settings', authMiddleware, adminOnly, (req, res) => 
 });
 
 // POST /api/appointments — Yeni randevu oluştur
-router.post('/', authMiddleware, adminOnly, (req, res) => {
+router.post('/', authMiddleware, appointmentEnabled, adminOnly, (req, res) => {
     try {
         const db = req.app.locals.db;
         const companyId = req.user.company_id;

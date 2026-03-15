@@ -128,6 +128,7 @@ function initDB() {
         db.exec(`ALTER TABLE companies ADD COLUMN ${name} ${def}`);
       }
     };
+    addCompCol('appointment_enabled', 'INTEGER DEFAULT 0');
     addCompCol('appointment_whatsapp_notify', 'INTEGER DEFAULT 0');
     addCompCol('appointment_sms_notify', 'INTEGER DEFAULT 0');
     addCompCol('sms_provider', "TEXT DEFAULT 'netgsm'");

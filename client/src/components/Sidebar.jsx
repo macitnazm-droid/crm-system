@@ -14,7 +14,9 @@ export default function Sidebar() {
         { to: '/', icon: LayoutDashboard, label: 'Dashboard', end: true },
         { to: '/conversations', icon: MessageSquare, label: 'Konuşmalar' },
         { to: '/customers', icon: Users, label: 'Müşteriler' },
-        { to: '/appointments', icon: CalendarDays, label: 'Randevular' },
+        ...(user?.appointment_enabled || user?.role === 'super_admin'
+            ? [{ to: '/appointments', icon: CalendarDays, label: 'Randevular' }]
+            : []),
         { to: '/reports', icon: BarChart3, label: 'Raporlar' },
         { to: '/settings', icon: Settings, label: 'Ayarlar' },
         { to: '/simulator', icon: Radio, label: 'Simülatör' },

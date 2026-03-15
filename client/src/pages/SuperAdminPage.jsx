@@ -492,9 +492,10 @@ export default function SuperAdminPage() {
                                             ]
                                         },
                                         {
-                                            category: 'Randevu',
+                                            category: 'Randevu Sistemi',
                                             icon: '📅',
                                             features: [
+                                                { key: 'appointment_enabled', label: 'Randevu Modülü', desc: 'Randevu sistemini komple aç/kapat' },
                                                 { key: 'appointment_whatsapp_notify', label: 'WhatsApp Bildirim', desc: 'Randevu oluşturulduğunda WhatsApp bildirimi' },
                                                 { key: 'appointment_sms_notify', label: 'SMS Bildirim', desc: 'Randevu oluşturulduğunda SMS bildirimi' },
                                             ]

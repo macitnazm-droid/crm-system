@@ -98,11 +98,13 @@ router.post('/login', (req, res) => {
         }
 
         // Şirket aktif mi kontrol et (superadmin muaf)
+        let companyFeatures = {};
         if (user.company_id && user.role !== 'super_admin') {
-            const company = db.prepare('SELECT is_active FROM companies WHERE id = ?').get(user.company_id);
+            const company = db.prepare('SELECT is_active, appointment_enabled FROM companies WHERE id = ?').get(user.company_id);
             if (company && !company.is_active) {
                 return res.status(403).json({ error: 'Şirket hesabı dondurulmuş. Lütfen yönetici ile iletişime geçin.' });
             }
+            companyFeatures = { appointment_enabled: !!company?.appointment_enabled };
         }
 
         const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
@@ -115,7 +117,8 @@ router.post('/login', (req, res) => {
                 email: user.email,
                 name: user.name,
                 role: user.role,
-                avatar_color: user.avatar_color
+                avatar_color: user.avatar_color,
+                ...companyFeatures
             }
         });
     } catch (err) {
