@@ -11,6 +11,7 @@ import SettingsPage from './pages/SettingsPage';
 import SimulatorPage from './pages/SimulatorPage';
 import SuperAdminPage from './pages/SuperAdminPage';
 import AppointmentsPage from './pages/AppointmentsPage';
+import LeadsPage from './pages/LeadsPage';
 
 function ProtectedRoute({ children, role }) {
   const { isAuthenticated, user, loading } = useAuth();
@@ -30,6 +31,7 @@ function AppRoutes() {
         <Route index element={<DashboardPage />} />
         <Route path="conversations" element={<ConversationsPage />} />
         <Route path="customers" element={<CustomersPage />} />
+        <Route path="leads" element={<LeadsPage />} />
         <Route path="appointments" element={<AppointmentsPage />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="settings" element={<SettingsPage />} />

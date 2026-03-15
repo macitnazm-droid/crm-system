@@ -86,6 +86,20 @@ export const aiAPI = {
     updatePlatformSettings: (data) => api.patch('/ai/platform-settings', data),
 };
 
+// Leads
+export const leadsAPI = {
+    list: (params) => api.get('/leads', { params }),
+    stats: () => api.get('/leads/stats'),
+    get: (id) => api.get(`/leads/${id}`),
+    create: (data) => api.post('/leads', data),
+    update: (id, data) => api.patch(`/leads/${id}`, data),
+    updateStatus: (id, status) => api.patch(`/leads/${id}/status`, { status }),
+    delete: (id) => api.delete(`/leads/${id}`),
+    createAppointment: (id, data) => api.post(`/leads/${id}/create-appointment`, data),
+    getSettings: () => api.get('/leads/settings/automation'),
+    updateSettings: (data) => api.patch('/leads/settings/automation', data),
+};
+
 // Reports
 export const reportsAPI = {
     today: () => api.get('/reports/today'),
@@ -93,6 +107,10 @@ export const reportsAPI = {
     agents: () => api.get('/reports/agents'),
     messagesChart: () => api.get('/reports/messages-chart'),
     sources: () => api.get('/reports/sources'),
+    dashboard: () => api.get('/reports/dashboard'),
+    exportCustomers: (params) => api.get('/reports/export/customers', { params, responseType: 'blob' }),
+    exportLeads: (params) => api.get('/reports/export/leads', { params, responseType: 'blob' }),
+    exportAppointments: (params) => api.get('/reports/export/appointments', { params, responseType: 'blob' }),
 };
 
 // Webhooks (simulate)

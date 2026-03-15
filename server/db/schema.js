@@ -130,6 +130,10 @@ function initDB() {
     };
     addCompCol('feature_ai', 'INTEGER DEFAULT 1');
     addCompCol('feature_lead', 'INTEGER DEFAULT 0');
+    addCompCol('feature_leads', 'INTEGER DEFAULT 0');
+    addCompCol('lead_auto_message', 'INTEGER DEFAULT 0');
+    addCompCol('lead_message_template', "TEXT DEFAULT 'Merhaba {isim}, talebinizi aldık. En kısa sürede sizinle iletişime geçeceğiz.'");
+    addCompCol('lead_message_delay', 'INTEGER DEFAULT 0');
     addCompCol('appointment_enabled', 'INTEGER DEFAULT 0');
     addCompCol('appointment_whatsapp_notify', 'INTEGER DEFAULT 0');
     addCompCol('appointment_sms_notify', 'INTEGER DEFAULT 0');
@@ -396,6 +400,29 @@ function initDB() {
       is_active INTEGER DEFAULT 1
     );
 
+    CREATE TABLE IF NOT EXISTS leads (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      company_id INTEGER REFERENCES companies(id),
+      name TEXT NOT NULL,
+      phone TEXT,
+      email TEXT,
+      source TEXT DEFAULT 'facebook',
+      form_name TEXT,
+      form_data TEXT,
+      ad_name TEXT,
+      campaign_name TEXT,
+      status TEXT DEFAULT 'new' CHECK(status IN ('new', 'contacted', 'appointment', 'converted', 'lost')),
+      notes TEXT,
+      assigned_agent_id INTEGER REFERENCES users(id),
+      customer_id INTEGER REFERENCES customers(id),
+      appointment_id INTEGER REFERENCES appointments(id),
+      auto_message_sent INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_leads_company ON leads(company_id);
+    CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(company_id, status);
     CREATE INDEX IF NOT EXISTS idx_users_company ON users(company_id);
     CREATE INDEX IF NOT EXISTS idx_customers_company ON customers(company_id);
     CREATE INDEX IF NOT EXISTS idx_conversations_company ON conversations(company_id);

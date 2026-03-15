@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { reportsAPI, appointmentsAPI } from '../lib/api';
-import { BarChart3, TrendingUp, Users, Bot, UserCheck, Percent, Calendar, CheckCircle, XCircle, Clock, Search, ChevronLeft, ChevronRight, Info } from 'lucide-react';
+import { BarChart3, TrendingUp, Users, Bot, UserCheck, Percent, Calendar, CheckCircle, XCircle, Clock, Search, ChevronLeft, ChevronRight, Info, Download } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 
 export default function ReportsPage() {
@@ -168,11 +168,37 @@ export default function ReportsPage() {
     const sourceLabel = (s) => s === 'instagram' ? 'Instagram' : s === 'whatsapp' ? 'WhatsApp' : s || '-';
     const sourceColor = (s) => s === 'instagram' ? { bg: 'rgba(225,48,108,0.15)', color: '#e1306c' } : s === 'whatsapp' ? { bg: 'rgba(37,211,102,0.15)', color: '#25d366' } : { bg: 'var(--bg-tertiary)', color: 'var(--text-secondary)' };
 
+    const handleExport = (type) => {
+        const base = import.meta.env.VITE_API_URL || (window.location.origin + '/api');
+        const url = `${base}/reports/export/${type}`;
+        // Token'ı header ile göndermek yerine, blob olarak indiriyoruz
+        reportsAPI[`export${type.charAt(0).toUpperCase() + type.slice(1)}`]({}).then(res => {
+            const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `${type}-${new Date().toISOString().split('T')[0]}.csv`;
+            link.click();
+        }).catch(err => console.error('Export hatası:', err));
+    };
+
     return (
         <div className="animate-fade-in">
-            <div className="page-header">
-                <h1>Raporlar</h1>
-                <p>Performans metrikleri ve analitik veriler</p>
+            <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                    <h1>Raporlar</h1>
+                    <p>Performans metrikleri ve analitik veriler</p>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn btn-secondary btn-sm" onClick={() => handleExport('customers')} style={{ fontSize: 11 }}>
+                        <Download size={13} /> Müşteriler
+                    </button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => handleExport('leads')} style={{ fontSize: 11 }}>
+                        <Download size={13} /> Leadler
+                    </button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => handleExport('appointments')} style={{ fontSize: 11 }}>
+                        <Download size={13} /> Randevular
+                    </button>
+                </div>
             </div>
 
             {/* Randevu Özet: Takvim + Ayrıntılar + İstatistikler */}

@@ -442,6 +442,164 @@ router.get('/messenger', (req, res) => {
     }
 });
 
+// POST /api/webhooks/leadgen — Meta Lead Ads webhook
+router.post('/leadgen', async (req, res) => {
+    try {
+        const db = req.app.locals.db;
+        const io = req.app.locals.io;
+        const body = req.body;
+
+        console.log('📋 Leadgen webhook:', JSON.stringify(body).substring(0, 1000));
+
+        if (body.entry) {
+            for (const entry of body.entry) {
+                const changes = entry.changes || [];
+                for (const change of changes) {
+                    if (change.field === 'leadgen') {
+                        const leadgenId = change.value?.leadgen_id;
+                        const pageId = change.value?.page_id;
+                        const adId = change.value?.ad_id;
+
+                        if (!leadgenId || !pageId) continue;
+
+                        // Şirketi bul (page_id üzerinden)
+                        const integration = db.prepare(
+                            "SELECT * FROM integration_settings WHERE (page_id = ? OR facebook_page_id = ?) AND is_active = 1 LIMIT 1"
+                        ).get(pageId, pageId);
+
+                        if (!integration) {
+                            console.warn(`📋 Leadgen: page_id=${pageId} için entegrasyon bulunamadı`);
+                            continue;
+                        }
+
+                        const companyId = integration.company_id;
+                        const accessToken = integration.api_key;
+
+                        // Graph API'den lead bilgilerini çek
+                        let leadData = { name: 'Bilinmeyen Lead', phone: null, email: null, formName: null, formData: null, adName: null, campaignName: null };
+
+                        if (accessToken) {
+                            try {
+                                const fetch = (await import('node-fetch')).default;
+                                const leadRes = await fetch(
+                                    `https://graph.facebook.com/v21.0/${leadgenId}?access_token=${accessToken}`
+                                );
+                                if (leadRes.ok) {
+                                    const ld = await leadRes.json();
+                                    const fields = ld.field_data || [];
+
+                                    for (const f of fields) {
+                                        const val = f.values?.[0] || '';
+                                        if (['full_name', 'ad_soyad', 'name'].includes(f.name)) leadData.name = val;
+                                        if (['phone_number', 'telefon', 'phone'].includes(f.name)) leadData.phone = val;
+                                        if (['email', 'e-posta', 'e_posta'].includes(f.name)) leadData.email = val;
+                                    }
+
+                                    leadData.formName = ld.form_name || null;
+                                    leadData.formData = JSON.stringify(fields);
+
+                                    console.log(`📋 Lead bilgileri çekildi: ${leadData.name} (${leadData.phone || 'tel yok'})`);
+                                } else {
+                                    console.warn(`📋 Lead bilgileri çekilemedi (${leadRes.status})`);
+                                }
+
+                                // Kampanya/reklam bilgisi çek (opsiyonel)
+                                if (adId) {
+                                    try {
+                                        const adRes = await fetch(
+                                            `https://graph.facebook.com/v21.0/${adId}?fields=name,campaign{name}&access_token=${accessToken}`
+                                        );
+                                        if (adRes.ok) {
+                                            const ad = await adRes.json();
+                                            leadData.adName = ad.name || null;
+                                            leadData.campaignName = ad.campaign?.name || null;
+                                        }
+                                    } catch (adErr) {
+                                        console.warn('Reklam bilgisi çekilemedi:', adErr.message);
+                                    }
+                                }
+                            } catch (fetchErr) {
+                                console.error('Lead fetch hatası:', fetchErr.message);
+                            }
+                        }
+
+                        // Lead'i kaydet
+                        const now = new Date().toISOString();
+                        const result = db.prepare(`
+                            INSERT INTO leads (company_id, name, phone, email, source, form_name, form_data, ad_name, campaign_name, status, created_at, updated_at)
+                            VALUES (?, ?, ?, ?, 'facebook', ?, ?, ?, ?, 'new', ?, ?)
+                        `).run(
+                            companyId, leadData.name, leadData.phone, leadData.email,
+                            leadData.formName, leadData.formData, leadData.adName || null, leadData.campaignName || null,
+                            now, now
+                        );
+
+                        const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(result.lastInsertRowid);
+                        io.to(`company:${companyId}`).emit('lead:new', { lead });
+
+                        console.log(`✅ Lead kaydedildi: #${lead.id} ${leadData.name} (company:${companyId})`);
+
+                        // Otomatik WhatsApp mesajı gönder (toggle açıksa)
+                        const company = db.prepare('SELECT lead_auto_message, lead_message_template, lead_message_delay FROM companies WHERE id = ?').get(companyId);
+
+                        if (company?.lead_auto_message && leadData.phone) {
+                            const template = (company.lead_message_template || 'Merhaba {isim}, talebinizi aldık.')
+                                .replace('{isim}', leadData.name || '');
+
+                            const delay = (company.lead_message_delay || 0) * 1000;
+
+                            const sendAutoMessage = async () => {
+                                try {
+                                    const { sendOutboundMessage } = require('./webhooks');
+                                    const sendResult = await sendOutboundMessage(db, {
+                                        companyId,
+                                        source: 'whatsapp',
+                                        recipientPhone: leadData.phone,
+                                        text: template,
+                                    });
+                                    if (sendResult?.sent) {
+                                        db.prepare('UPDATE leads SET auto_message_sent = 1, updated_at = ? WHERE id = ?').run(new Date().toISOString(), lead.id);
+                                        console.log(`📤 Lead oto-mesaj gönderildi: #${lead.id} → ${leadData.phone}`);
+                                    }
+                                } catch (msgErr) {
+                                    console.error('Lead oto-mesaj hatası:', msgErr.message);
+                                }
+                            };
+
+                            if (delay > 0) {
+                                setTimeout(sendAutoMessage, delay);
+                            } else {
+                                await sendAutoMessage();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        res.status(200).json({ status: 'ok' });
+    } catch (err) {
+        console.error('Leadgen webhook error:', err);
+        res.status(200).json({ status: 'error handled' });
+    }
+});
+
+// GET /api/webhooks/leadgen — Meta Leadgen Webhook doğrulama
+router.get('/leadgen', (req, res) => {
+    const db = req.app.locals.db;
+    const integration = db.prepare(
+        "SELECT verify_token FROM integration_settings WHERE provider = 'meta' AND is_active = 1 AND verify_token != '' LIMIT 1"
+    ).get();
+    const verifyToken = integration?.verify_token || process.env.LEADGEN_VERIFY_TOKEN || 'leadgen_webhook_verify_token';
+
+    if (req.query['hub.verify_token'] === verifyToken && req.query['hub.challenge']) {
+        console.log('✅ Leadgen webhook doğrulandı');
+        res.send(req.query['hub.challenge']);
+    } else {
+        res.status(403).send('Token geçersiz');
+    }
+});
+
 // GET /api/webhooks/instagram — Meta Webhook doğrulama
 router.get('/instagram', (req, res) => {
     const db = req.app.locals.db;
