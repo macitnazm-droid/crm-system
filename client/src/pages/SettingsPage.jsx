@@ -34,7 +34,7 @@ export default function SettingsPage() {
     const [waWebLoading, setWaWebLoading] = useState(false);
 
     // Platform bazlı AI toggle
-    const [platformAI, setPlatformAI] = useState({ ai_instagram: 1, ai_whatsapp: 1, ai_messenger: 1 });
+    const [platformAI, setPlatformAI] = useState({ feature_ai: 1, ai_instagram: 1, ai_whatsapp: 1, ai_messenger: 1 });
 
     // Randevu bildirim ayarları
     const [notifySettings, setNotifySettings] = useState({
@@ -818,7 +818,7 @@ export default function SettingsPage() {
                         <Bot size={18} style={{ color: 'var(--accent-primary)' }} />
                         <h3 style={{ fontSize: 15, fontWeight: 600 }}>Platform Bazlı AI Yanıtları</h3>
                     </div>
-                    {!platformAI.feature_ai && platformAI.feature_ai !== undefined ? (
+                    {!platformAI.feature_ai ? (
                         <p style={{ fontSize: 12, color: '#f87171', padding: '10px 0' }}>
                             Yapay zeka modülü sistem yöneticisi tarafından kapatılmış. Aktif etmek için yönetici ile iletişime geçin.
                         </p>

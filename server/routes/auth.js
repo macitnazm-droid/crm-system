@@ -100,7 +100,7 @@ router.post('/login', (req, res) => {
         // Şirket aktif mi kontrol et (superadmin muaf)
         let companyFeatures = {};
         if (user.company_id && user.role !== 'super_admin') {
-            const company = db.prepare('SELECT is_active, feature_ai, appointment_enabled, feature_lead FROM companies WHERE id = ?').get(user.company_id);
+            const company = db.prepare('SELECT * FROM companies WHERE id = ?').get(user.company_id);
             if (company && !company.is_active) {
                 return res.status(403).json({ error: 'Şirket hesabı dondurulmuş. Lütfen yönetici ile iletişime geçin.' });
             }
@@ -136,11 +136,15 @@ router.get('/me', authMiddleware, (req, res) => {
     const db = req.app.locals.db;
     const userData = { ...req.user };
     if (req.user.company_id && req.user.role !== 'super_admin') {
-        const company = db.prepare('SELECT feature_ai, appointment_enabled, feature_lead FROM companies WHERE id = ?').get(req.user.company_id);
-        if (company) {
-            userData.feature_ai = !!company.feature_ai;
-            userData.appointment_enabled = !!company.appointment_enabled;
-            userData.feature_lead = !!company.feature_lead;
+        try {
+            const company = db.prepare('SELECT * FROM companies WHERE id = ?').get(req.user.company_id);
+            if (company) {
+                userData.feature_ai = !!company.feature_ai;
+                userData.appointment_enabled = !!company.appointment_enabled;
+                userData.feature_lead = !!company.feature_lead;
+            }
+        } catch (e) {
+            console.error('Me features error:', e.message);
         }
     }
     res.json({ user: userData });
