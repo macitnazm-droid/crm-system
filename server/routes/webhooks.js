@@ -336,13 +336,25 @@ router.post('/messenger', verifyMetaSignature('messenger'), async (req, res) => 
                     const recipientId = event.recipient?.id;
 
                     if (event.message?.is_echo) {
-                        if (messageText && !wasSentByUs(messageText)) {
-                            console.log(`📤 Messenger giden mesaj: → "${messageText.substring(0, 60)}"`);
+                        // Echo mesajlarında da medya olabilir (Meta inbox'tan gönderilen görseller)
+                        let echoMediaUrl = null;
+                        let echoMediaType = null;
+                        const echoAttachments = event.message?.attachments;
+                        if (echoAttachments && echoAttachments.length > 0) {
+                            const att = echoAttachments[0];
+                            echoMediaType = att.type;
+                            echoMediaUrl = att.payload?.url;
+                        }
+                        const echoContent = messageText || (echoMediaType === 'image' ? '📷 Görsel' : echoMediaType === 'video' ? '🎥 Video' : echoMediaUrl ? '📎 Dosya' : null);
+                        if (echoContent && !wasSentByUs(echoContent)) {
+                            console.log(`📤 Messenger giden mesaj: → "${echoContent.substring(0, 60)}"${echoMediaUrl ? ' [medya]' : ''}`);
                             await processOutboundMessage(db, io, {
                                 company_id: companyId,
                                 platform_id: recipientId || senderId,
-                                content: messageText,
+                                content: echoContent,
                                 source: 'messenger',
+                                media_url: echoMediaUrl,
+                                media_type: echoMediaType,
                             });
                         }
                         continue;
