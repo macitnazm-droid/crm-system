@@ -377,6 +377,8 @@ router.post('/messenger', verifyMetaSignature('messenger'), async (req, res) => 
                             } catch (profileErr) {
                                 console.warn('Messenger profil çekme hatası:', profileErr.message);
                             }
+                        } else {
+                            console.warn(`👤 Messenger Profil: api_key yok [integration=${activeIntegration?.id}, company=${companyId}]`);
                         }
 
                         const msgDisplayContent = messageText || (msgMediaType === 'image' ? '📷 Görsel' : msgMediaType === 'video' ? '🎥 Video' : '📎 Dosya');
