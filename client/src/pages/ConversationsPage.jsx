@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
-import { conversationsAPI, messagesAPI, aiAPI } from '../lib/api';
+import { conversationsAPI, messagesAPI, aiAPI, customersAPI } from '../lib/api';
 import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../context/AuthContext';
 import {
     Send, Bot, BotOff, User, Clock, Instagram, MessageCircle,
-    Sparkles, Search, Filter, ChevronDown, Phone, Image, X
+    Sparkles, Search, Filter, ChevronDown, Phone, Image, X, Pencil, Check
 } from 'lucide-react';
 
 export default function ConversationsPage() {
@@ -22,6 +22,8 @@ export default function ConversationsPage() {
     const fileInputRef = useRef(null);
     const [search, setSearch] = useState('');
     const [filter, setFilter] = useState('all');
+    const [editingName, setEditingName] = useState(false);
+    const [editName, setEditName] = useState('');
     const messagesEndRef = useRef(null);
     const selectedRef = useRef(null);
 
@@ -45,12 +47,14 @@ export default function ConversationsPage() {
         socket.on('conversation:updated', handleConvUpdate);
         socket.on('conversation:ai_toggled', handleConvUpdate);
         socket.on('customer:categorized', handleConvUpdate);
+        socket.on('customer:updated', handleConvUpdate);
 
         return () => {
             socket.off('message:new', handleNewMessage);
             socket.off('conversation:updated', handleConvUpdate);
             socket.off('conversation:ai_toggled', handleConvUpdate);
             socket.off('customer:categorized', handleConvUpdate);
+            socket.off('customer:updated', handleConvUpdate);
         };
     }, [socket, selected]);
 
@@ -136,6 +140,18 @@ export default function ConversationsPage() {
             await aiAPI.generateResponse(selected);
         } catch (err) { console.error(err); }
         finally { setAiLoading(false); }
+    };
+
+    const saveCustomerName = async () => {
+        if (!editName.trim() || !convDetail?.customer_id) return;
+        try {
+            await customersAPI.updateName(convDetail.customer_id, editName.trim());
+            setConvDetail(prev => ({ ...prev, customer_name: editName.trim() }));
+            setConversations(prev => prev.map(c =>
+                c.id === selected ? { ...c, customer_name: editName.trim() } : c
+            ));
+            setEditingName(false);
+        } catch (err) { console.error(err); }
     };
 
     const getCatClass = (c) => ({ hot: 'badge-hot', warm: 'badge-warm', cold: 'badge-cold', unqualified: 'badge-unqualified' }[c] || '');
@@ -255,7 +271,31 @@ export default function ConversationsPage() {
                                 </div>
                                 <div>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                        <span style={{ fontWeight: 600, fontSize: 15 }}>{convDetail?.customer_name}</span>
+                                        {editingName ? (
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                <input
+                                                    className="input"
+                                                    value={editName}
+                                                    onChange={e => setEditName(e.target.value)}
+                                                    onKeyDown={e => { if (e.key === 'Enter') saveCustomerName(); if (e.key === 'Escape') setEditingName(false); }}
+                                                    autoFocus
+                                                    style={{ fontSize: 14, padding: '4px 8px', width: 180, height: 30 }}
+                                                />
+                                                <button onClick={saveCustomerName} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent-primary)', padding: 2 }} title="Kaydet">
+                                                    <Check size={16} />
+                                                </button>
+                                                <button onClick={() => setEditingName(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 2 }} title="Vazgeç">
+                                                    <X size={16} />
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <span style={{ fontWeight: 600, fontSize: 15 }}>{convDetail?.customer_name}</span>
+                                                <button onClick={() => { setEditName(convDetail?.customer_name || ''); setEditingName(true); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 2 }} title="İsmi düzenle">
+                                                    <Pencil size={13} />
+                                                </button>
+                                            </>
+                                        )}
                                         <span className={`badge ${getCatClass(convDetail?.customer_category)}`}>
                                             {getCatLabel(convDetail?.customer_category)}
                                         </span>

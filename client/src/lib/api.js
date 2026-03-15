@@ -64,6 +64,7 @@ export const messagesAPI = {
 export const customersAPI = {
     list: (params) => api.get('/customers', { params }),
     get: (id) => api.get(`/customers/${id}`),
+    updateName: (id, name) => api.patch(`/customers/${id}/name`, { name }),
     updateCategory: (id, category, leadScore) => api.patch(`/customers/${id}/category`, { category, lead_score: leadScore }),
     downloadSample: () => api.get('/customers/import/sample', { responseType: 'blob' }),
     import: (file) => {

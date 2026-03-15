@@ -159,6 +159,36 @@ router.get('/:id', authMiddleware, (req, res) => {
     }
 });
 
+// PATCH /api/customers/:id/name
+router.patch('/:id/name', authMiddleware, (req, res) => {
+    try {
+        const db = req.app.locals.db;
+        const companyId = req.user.company_id;
+        const { name } = req.body;
+
+        if (!name || !name.trim()) {
+            return res.status(400).json({ error: 'İsim boş olamaz' });
+        }
+
+        const result = db.prepare('UPDATE customers SET name = ?, updated_at = ? WHERE id = ? AND company_id = ?')
+            .run(name.trim(), new Date().toISOString(), req.params.id, companyId);
+
+        if (result.changes === 0) {
+            return res.status(404).json({ error: 'Müşteri bulunamadı' });
+        }
+
+        const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id);
+
+        const io = req.app.locals.io;
+        io.to(`company:${companyId}`).emit('customer:updated', { customer });
+
+        res.json({ customer });
+    } catch (err) {
+        console.error('Update customer name error:', err);
+        res.status(500).json({ error: 'İsim güncellenirken hata oluştu' });
+    }
+});
+
 // PATCH /api/customers/:id/category
 router.patch('/:id/category', authMiddleware, (req, res) => {
     try {
