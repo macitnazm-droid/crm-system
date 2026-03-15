@@ -477,35 +477,62 @@ export default function SuperAdminPage() {
                                     <div className="sa-empty">Bu şirkete ait kullanıcı yok</div>
                                 )}
 
-                                {/* Feature Toggles */}
+                                {/* Feature Toggles - Kategorilere ayrılmış */}
                                 <div className="sa-features-section">
                                     <h4 className="sa-features-title">Özellik Yönetimi</h4>
-                                    <div className="sa-features-grid">
-                                        {[
-                                            { key: 'ai_instagram', label: 'AI - Instagram', desc: 'Instagram mesajlarında yapay zeka yanıtı' },
-                                            { key: 'ai_whatsapp', label: 'AI - WhatsApp', desc: 'WhatsApp mesajlarında yapay zeka yanıtı' },
-                                            { key: 'ai_messenger', label: 'AI - Messenger', desc: 'Messenger mesajlarında yapay zeka yanıtı' },
-                                            { key: 'appointment_whatsapp_notify', label: 'Randevu WhatsApp Bildirim', desc: 'Randevu oluşturulduğunda WhatsApp bildirimi' },
-                                            { key: 'appointment_sms_notify', label: 'Randevu SMS Bildirim', desc: 'Randevu oluşturulduğunda SMS bildirimi' },
-                                            { key: 'lead_auto_message', label: 'Lead Otomatik Mesaj', desc: 'Yeni leadlere otomatik mesaj gönderimi' },
-                                        ].map(feat => (
-                                            <div key={feat.key} className="sa-feature-item">
-                                                <div className="sa-feature-info">
-                                                    <span className="sa-feature-label">{feat.label}</span>
-                                                    <span className="sa-feature-desc">{feat.desc}</span>
-                                                </div>
-                                                <button
-                                                    className={`sa-feature-toggle ${selectedCompany[feat.key] ? 'active' : ''}`}
-                                                    onClick={() => handleToggleFeature(selectedCompany.id, feat.key, selectedCompany[feat.key])}
-                                                >
-                                                    {selectedCompany[feat.key]
-                                                        ? <ToggleRight size={28} />
-                                                        : <ToggleLeft size={28} />
-                                                    }
-                                                </button>
+
+                                    {[
+                                        {
+                                            category: 'Yapay Zeka',
+                                            icon: '🤖',
+                                            features: [
+                                                { key: 'ai_instagram', label: 'Instagram AI', desc: 'Instagram mesajlarında yapay zeka yanıtı' },
+                                                { key: 'ai_whatsapp', label: 'WhatsApp AI', desc: 'WhatsApp mesajlarında yapay zeka yanıtı' },
+                                                { key: 'ai_messenger', label: 'Messenger AI', desc: 'Messenger mesajlarında yapay zeka yanıtı' },
+                                            ]
+                                        },
+                                        {
+                                            category: 'Randevu',
+                                            icon: '📅',
+                                            features: [
+                                                { key: 'appointment_whatsapp_notify', label: 'WhatsApp Bildirim', desc: 'Randevu oluşturulduğunda WhatsApp bildirimi' },
+                                                { key: 'appointment_sms_notify', label: 'SMS Bildirim', desc: 'Randevu oluşturulduğunda SMS bildirimi' },
+                                            ]
+                                        },
+                                        {
+                                            category: 'Lead Yönetimi',
+                                            icon: '🎯',
+                                            features: [
+                                                { key: 'lead_auto_message', label: 'Otomatik Mesaj', desc: 'Yeni leadlere otomatik mesaj gönderimi' },
+                                            ]
+                                        },
+                                    ].map(group => (
+                                        <div key={group.category} className="sa-feature-group">
+                                            <div className="sa-feature-group-header">
+                                                <span>{group.icon}</span>
+                                                <span>{group.category}</span>
                                             </div>
-                                        ))}
-                                    </div>
+                                            <div className="sa-feature-group-items">
+                                                {group.features.map(feat => (
+                                                    <div key={feat.key} className="sa-feature-item">
+                                                        <div className="sa-feature-info">
+                                                            <span className="sa-feature-label">{feat.label}</span>
+                                                            <span className="sa-feature-desc">{feat.desc}</span>
+                                                        </div>
+                                                        <button
+                                                            className={`sa-feature-toggle ${selectedCompany[feat.key] ? 'active' : ''}`}
+                                                            onClick={() => handleToggleFeature(selectedCompany.id, feat.key, selectedCompany[feat.key])}
+                                                        >
+                                                            {selectedCompany[feat.key]
+                                                                ? <ToggleRight size={28} />
+                                                                : <ToggleLeft size={28} />
+                                                            }
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
                                 </div>
                             </>
                         )}
