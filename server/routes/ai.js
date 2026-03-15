@@ -176,8 +176,9 @@ router.get('/platform-settings', authMiddleware, (req, res) => {
     try {
         const db = req.app.locals.db;
         const companyId = req.user.company_id;
-        const company = db.prepare('SELECT ai_instagram, ai_whatsapp, ai_messenger FROM companies WHERE id = ?').get(companyId);
+        const company = db.prepare('SELECT feature_ai, ai_instagram, ai_whatsapp, ai_messenger FROM companies WHERE id = ?').get(companyId);
         res.json({
+            feature_ai: company?.feature_ai ?? 1,
             ai_instagram: company?.ai_instagram ?? 1,
             ai_whatsapp: company?.ai_whatsapp ?? 1,
             ai_messenger: company?.ai_messenger ?? 1,
@@ -192,6 +193,13 @@ router.patch('/platform-settings', authMiddleware, adminOnly, (req, res) => {
     try {
         const db = req.app.locals.db;
         const companyId = req.user.company_id;
+
+        // SuperAdmin master switch kontrolü
+        const company = db.prepare('SELECT feature_ai FROM companies WHERE id = ?').get(companyId);
+        if (!company?.feature_ai) {
+            return res.status(403).json({ error: 'Yapay zeka modülü süper admin tarafından kapatılmış' });
+        }
+
         const { ai_instagram, ai_whatsapp, ai_messenger } = req.body;
 
         const updates = [];

@@ -708,8 +708,11 @@ async function processIncomingMessage(db, io, data) {
     // Platform bazlı AI kontrolü (şirket ayarı)
     let platformAiEnabled = true;
     try {
-        const company = db.prepare('SELECT ai_instagram, ai_whatsapp, ai_messenger FROM companies WHERE id = ?').get(company_id);
+        const company = db.prepare('SELECT feature_ai, ai_instagram, ai_whatsapp, ai_messenger FROM companies WHERE id = ?').get(company_id);
         if (company) {
+            // SuperAdmin master switch
+            if (!company.feature_ai) platformAiEnabled = false;
+            // Admin platform toggle
             if (source === 'instagram' && company.ai_instagram === 0) platformAiEnabled = false;
             if (source === 'whatsapp' && company.ai_whatsapp === 0) platformAiEnabled = false;
             if (source === 'messenger' && company.ai_messenger === 0) platformAiEnabled = false;

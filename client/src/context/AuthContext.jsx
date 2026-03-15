@@ -14,6 +14,12 @@ export function AuthProvider({ children }) {
         if (token && savedUser) {
             try {
                 setUser(JSON.parse(savedUser));
+                // Sunucudan güncel feature bilgilerini al
+                authAPI.me().then(res => {
+                    const freshUser = res.data.user;
+                    setUser(freshUser);
+                    localStorage.setItem('crm_user', JSON.stringify(freshUser));
+                }).catch(() => {});
             } catch { /* ignore */ }
         }
         setLoading(false);

@@ -194,7 +194,7 @@ router.patch('/companies/:id/features', authMiddleware, superAdminOnly, (req, re
   try {
     const db = req.app.locals.db;
     const { feature, enabled } = req.body;
-    const allowed = ['ai_instagram', 'ai_whatsapp', 'ai_messenger', 'appointment_enabled', 'appointment_whatsapp_notify', 'appointment_sms_notify', 'lead_auto_message'];
+    const allowed = ['feature_ai', 'appointment_enabled', 'feature_lead'];
     if (!allowed.includes(feature)) {
       return res.status(400).json({ error: 'Geçersiz özellik' });
     }

@@ -818,39 +818,47 @@ export default function SettingsPage() {
                         <Bot size={18} style={{ color: 'var(--accent-primary)' }} />
                         <h3 style={{ fontSize: 15, fontWeight: 600 }}>Platform Bazlı AI Yanıtları</h3>
                     </div>
-                    <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 14 }}>
-                        Her platform için AI otomatik yanıtını ayrı ayrı açıp kapatabilirsiniz. Kapatılan platformdan gelen mesajlara AI yanıt vermez.
-                    </p>
-                    <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-                        {[
-                            { key: 'ai_instagram', label: 'Instagram', color: '#E1306C' },
-                            { key: 'ai_whatsapp', label: 'WhatsApp', color: '#25D366' },
-                            { key: 'ai_messenger', label: 'Messenger', color: '#0084FF' },
-                        ].map(p => (
-                            <div key={p.key} style={{
-                                flex: '1 1 140px', padding: '12px 16px', borderRadius: 'var(--radius-md)',
-                                border: '1px solid var(--border-color)', background: 'var(--bg-secondary)',
-                                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12
-                            }}>
-                                <span style={{ fontSize: 13, fontWeight: 500, color: p.color }}>{p.label}</span>
-                                <label className="toggle-switch">
-                                    <input type="checkbox" checked={!!platformAI[p.key]}
-                                        onChange={async (e) => {
-                                            const val = e.target.checked ? 1 : 0;
-                                            setPlatformAI(prev => ({ ...prev, [p.key]: val }));
-                                            try {
-                                                await aiAPI.updatePlatformSettings({ [p.key]: val });
-                                                setTestResult({ success: true, message: `${p.label} AI yanıtı ${val ? 'açıldı' : 'kapatıldı'}` });
-                                            } catch (err) {
-                                                setPlatformAI(prev => ({ ...prev, [p.key]: val ? 0 : 1 }));
-                                                setTestResult({ success: false, message: 'Ayar güncellenemedi' });
-                                            }
-                                        }} />
-                                    <span className="toggle-slider"></span>
-                                </label>
+                    {!platformAI.feature_ai && platformAI.feature_ai !== undefined ? (
+                        <p style={{ fontSize: 12, color: '#f87171', padding: '10px 0' }}>
+                            Yapay zeka modülü sistem yöneticisi tarafından kapatılmış. Aktif etmek için yönetici ile iletişime geçin.
+                        </p>
+                    ) : (
+                        <>
+                            <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 14 }}>
+                                Her platform için AI otomatik yanıtını ayrı ayrı açıp kapatabilirsiniz. Kapatılan platformdan gelen mesajlara AI yanıt vermez.
+                            </p>
+                            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                                {[
+                                    { key: 'ai_instagram', label: 'Instagram', color: '#E1306C' },
+                                    { key: 'ai_whatsapp', label: 'WhatsApp', color: '#25D366' },
+                                    { key: 'ai_messenger', label: 'Messenger', color: '#0084FF' },
+                                ].map(p => (
+                                    <div key={p.key} style={{
+                                        flex: '1 1 140px', padding: '12px 16px', borderRadius: 'var(--radius-md)',
+                                        border: '1px solid var(--border-color)', background: 'var(--bg-secondary)',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12
+                                    }}>
+                                        <span style={{ fontSize: 13, fontWeight: 500, color: p.color }}>{p.label}</span>
+                                        <label className="toggle-switch">
+                                            <input type="checkbox" checked={!!platformAI[p.key]}
+                                                onChange={async (e) => {
+                                                    const val = e.target.checked ? 1 : 0;
+                                                    setPlatformAI(prev => ({ ...prev, [p.key]: val }));
+                                                    try {
+                                                        await aiAPI.updatePlatformSettings({ [p.key]: val });
+                                                        setTestResult({ success: true, message: `${p.label} AI yanıtı ${val ? 'açıldı' : 'kapatıldı'}` });
+                                                    } catch (err) {
+                                                        setPlatformAI(prev => ({ ...prev, [p.key]: val ? 0 : 1 }));
+                                                        setTestResult({ success: false, message: err.response?.data?.error || 'Ayar güncellenemedi' });
+                                                    }
+                                                }} />
+                                            <span className="toggle-slider"></span>
+                                        </label>
+                                    </div>
+                                ))}
                             </div>
-                        ))}
-                    </div>
+                        </>
+                    )}
                 </div>
 
                 <div className="glass-card" style={{ padding: 0, overflow: 'hidden' }}>
